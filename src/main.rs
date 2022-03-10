@@ -1,5 +1,5 @@
 mod lang;
-mod ui;
+mod session;
 
 use crate::lang::Language;
 use crossterm::{
@@ -7,41 +7,55 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use session::Session;
 use std::{error::Error, io};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     Frame, Terminal,
 };
-use ui::prompt::Prompt;
 
+#[derive(PartialEq, Debug, Clone)]
+enum Screen {
+    Prompt,
+    Results,
+}
+
+#[derive(Debug, Clone)]
 struct App {
-    prompt: Prompt,
+    session: Session,
+    lang: Language,
+    screen: Screen,
 }
 
 impl App {
-    fn new(prompt_str: String) -> Self {
+    fn new() -> Self {
+        let l = Language::new("src/lang/english.json");
         Self {
-            prompt: Prompt::new(prompt_str),
+            session: Session::new(l.get_random(15).join(" ")),
+            lang: l,
+            screen: Screen::Prompt,
         }
+    }
+
+    fn reset(self: &mut Self) {
+        let l = Language::new("src/lang/english.json");
+        self.screen = Screen::Prompt;
+        self.session = Session::new(l.get_random(15).join(" "));
+        self.lang = l;
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let l = Language::new("src/lang/english.json");
-
-    // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    // create app and run it
-    let app = App::new(l.get_random(10).join(" "));
-    let result = run_app(&mut terminal, app);
+    let mut app = App::new();
+    let result = run_app(&mut terminal, &mut app);
 
-    // restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
     terminal.show_cursor()?;
@@ -50,63 +64,74 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:?}", err)
     }
 
+    println!("{:?}", app.session.timestamps);
+
     Ok(())
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
+fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|f| ui(f, &mut app))?;
 
-        let p = &mut app.prompt;
+        let a = &mut app;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Esc => {
                     return Ok(());
                 }
-                // KeyCode::Left => {
-                //     p.decrement_cursor();
-                // }
-
-                // KeyCode::Right => {
-                //     p.increment_cursor();
-                // }
                 KeyCode::Backspace => {
-                    p.backspace();
+                    if a.screen == Screen::Prompt {
+                        a.session.backspace();
+                    }
                 }
-                // KeyCode::Home => {
-                //     p.go_to_start();
-                // }
-                // KeyCode::End => {
-                //     p.go_to_end();
-                // }
-                KeyCode::Char(c) => {
-                    p.write(c);
-                }
+                KeyCode::Char(c) => match a.screen {
+                    Screen::Prompt => {
+                        a.session.write(c);
+                        if a.session.is_finished() {
+                            app.session.calc_results();
+                            app.screen = Screen::Results;
+                        }
+                    }
+                    Screen::Results => {
+                        if let KeyCode::Char('r') = key.code {
+                            a.session.prompt = a.lang.get_random(10).join(" ");
+                            a.reset()
+                        }
+                    }
+                },
                 _ => {}
             }
         }
     }
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(10)
-        .constraints(
-            [
-                Constraint::Percentage(50),
-                Constraint::Min(5),
-                Constraint::Percentage(50),
-            ]
-            .as_ref(),
-        )
-        .split(f.size());
+fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+    match app.screen {
+        Screen::Prompt => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(10)
+                .constraints(
+                    [
+                        Constraint::Percentage(50),
+                        Constraint::Min(5),
+                        Constraint::Percentage(50),
+                    ]
+                    .as_ref(),
+                )
+                .split(f.size());
 
-    let p = app.prompt.clone();
-    if p.input.len() == p.prompt.len() {
-        p.draw_results(f, chunks[1]).unwrap();
-    } else {
-        p.draw_prompt(f, chunks[1]).unwrap();
+            app.session.draw_prompt(f, chunks[1]).unwrap();
+        }
+        Screen::Results => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(10)
+                .constraints([Constraint::Percentage(75), Constraint::Min(5)].as_ref())
+                .split(f.size());
+
+            app.session.draw_results(f, chunks).unwrap();
+        }
     }
 }
