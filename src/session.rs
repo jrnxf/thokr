@@ -2,12 +2,13 @@ use itertools::Itertools;
 use std::{collections::HashMap, fmt::Error, time::SystemTime};
 use tui::{
     backend::Backend,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Span, Spans, Text},
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Wrap},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
@@ -31,6 +32,7 @@ pub struct Session {
     pub started_at: Option<SystemTime>,
     pub wpm: usize,
     pub accuracy: f64,
+    pub logs: Vec<String>,
 }
 
 impl Session {
@@ -39,6 +41,7 @@ impl Session {
             prompt: prompt_string,
             input: vec![],
             timestamps: vec![],
+            logs: vec![],
             cursor_pos: 0,
             started_at: None,
             wpm: 0,
@@ -135,7 +138,54 @@ impl Session {
         self.input.len() == self.prompt.len()
     }
 
-    pub fn draw_prompt<B: Backend>(&self, f: &mut Frame<B>, chunk: Rect) -> Result<(), Error> {
+    pub fn draw_prompt<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
+        let mut prompt_occupied_lines =
+            ((self.prompt.width() as f64 / f.size().width as f64).ceil() + 1.0) as u16;
+
+        if self.prompt.width() < f.size().width as usize {
+            prompt_occupied_lines = 1;
+        }
+
+        let h = &f.size().height;
+        // self.logs.push(format!("{}", *h));
+        // self.logs.push(format!("{}", prompt_occupied_lines / *h));
+
+        // let percentage_occupied_by_prompt = (prompt_occupied_lines as f64 / *h as f64) * 100.0;
+        // self.logs
+        //     .push(format!("perc {}", percentage_occupied_by_prompt));
+        // self.logs.push(format!(
+        //     "other {}",
+        //     (100.0 - percentage_occupied_by_prompt) / 2.0
+        // ));
+        self.logs.push(format!(
+            "{}",
+            ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16
+        ));
+        self.logs.push(format!("{}", prompt_occupied_lines));
+        self.logs.push(format!(
+            "{}",
+            ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16
+        ));
+        self.logs.push(format!("{}", *h));
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .horizontal_margin(10)
+            .constraints(
+                [
+                    // Constraint::Max((f.size().height / 2) - (prompt_occupied_lines / 2)),
+                    // Constraint::Length(5),
+                    Constraint::Length(((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16),
+                    Constraint::Length(prompt_occupied_lines),
+                    Constraint::Length(((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16),
+                    // Constraint::Length(5),
+                    // Constraint::Percentage(((100.0 - percentage_occupied_by_prompt) / 2.0) as u16),
+                    // Constraint::Percentage(percentage_occupied_by_prompt as u16),
+                    // Constraint::Percentage(((100.0 - percentage_occupied_by_prompt) / 2.0) as u16),
+                ]
+                .as_ref(),
+            )
+            .split(f.size());
+
         let mut spans = vec![];
 
         let mut idx = 0;
@@ -190,12 +240,46 @@ impl Session {
             }
         }
 
-        f.render_widget(
-            Paragraph::new(Spans::from(spans))
-                .alignment(Alignment::Center)
-                .wrap(Wrap { trim: true }),
-            chunk,
-        );
+        if f.size().width as usize > self.prompt.width() {
+            // the prompt takes up less space than the terminal window, so allow for centering
+            f.render_widget(
+                Paragraph::new(Text::from(""))
+                    .style(Style::default().bg(Color::Black))
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: true }),
+                chunks[0],
+            );
+            f.render_widget(
+                Paragraph::new(Spans::from(spans.clone()))
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: true }),
+                chunks[1],
+            );
+            f.render_widget(
+                Paragraph::new(Text::from(""))
+                    .style(Style::default().bg(Color::Black))
+                    .alignment(Alignment::Center)
+                    .wrap(Wrap { trim: true }),
+                chunks[2],
+            );
+        } else {
+            f.render_widget(
+                Paragraph::new(Text::from(""))
+                    .style(Style::default().bg(Color::Black))
+                    .wrap(Wrap { trim: true }),
+                chunks[0],
+            );
+            f.render_widget(
+                Paragraph::new(Spans::from(spans.clone())).wrap(Wrap { trim: true }),
+                chunks[1],
+            );
+            f.render_widget(
+                Paragraph::new(Text::from(""))
+                    .style(Style::default().bg(Color::Black))
+                    .wrap(Wrap { trim: true }),
+                chunks[2],
+            );
+        }
         Ok(())
     }
 

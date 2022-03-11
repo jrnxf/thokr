@@ -359,7 +359,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "thok"
+name = "thokr"
 version = "0.1.0"
 dependencies = [
  "crossterm 0.23.0",
@@ -368,6 +368,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tui",
+ "unicode-width",
 ]
 
 [[package]]

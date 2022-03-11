@@ -7,13 +7,15 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use itertools::Itertools;
 use session::Session;
-use std::{error::Error, io};
+use std::{env, error::Error, io};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
     Frame, Terminal,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(PartialEq, Debug, Clone)]
 enum Screen {
@@ -31,8 +33,10 @@ struct App {
 impl App {
     fn new() -> Self {
         let l = Language::new("src/lang/english.json");
+        let args: Vec<String> = env::args().collect();
         Self {
-            session: Session::new(l.get_random(15).join(" ")),
+            // session: Session::new(l.get_random(100).join(" ")[0..106].to_string()),
+            session: Session::new(l.get_random(args[1].parse().unwrap()).join(" ")),
             lang: l,
             screen: Screen::Prompt,
         }
@@ -64,7 +68,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:?}", err)
     }
 
-    println!("{:?}", app.session.timestamps);
+    println!("{:?}", app.session.logs);
 
     Ok(())
 }
@@ -109,26 +113,21 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: &mut App) -> io::Res
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     match app.screen {
         Screen::Prompt => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(10)
-                .constraints(
-                    [
-                        Constraint::Percentage(50),
-                        Constraint::Min(5),
-                        Constraint::Percentage(50),
-                    ]
-                    .as_ref(),
-                )
-                .split(f.size());
-
-            app.session.draw_prompt(f, chunks[1]).unwrap();
+            app.session.draw_prompt(f).unwrap();
         }
         Screen::Results => {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
-                .margin(10)
-                .constraints([Constraint::Percentage(75), Constraint::Min(5)].as_ref())
+                .margin(4)
+                .constraints(
+                    [
+                        // Constraint::Percentage(50),
+                        Constraint::Min(15),
+                        Constraint::Min(1),
+                        // Constraint::Percentage(50),
+                    ]
+                    .as_ref(),
+                )
                 .split(f.size());
 
             app.session.draw_results(f, chunks).unwrap();
