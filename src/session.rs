@@ -11,6 +11,7 @@ use tui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+const HORIZONTAL_MARGIN: u16 = 10;
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
     Correct,
@@ -193,14 +194,25 @@ impl Session {
     }
 
     pub fn draw_prompt<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
+        let max_chars_per_line = f.size().width - (HORIZONTAL_MARGIN * 2);
         let mut prompt_occupied_lines =
-            ((self.prompt.width() as f64 / f.size().width as f64).ceil() + 1.0) as u16;
+            ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
 
-        if self.prompt.width() < f.size().width as usize {
+        if self.prompt.width() <= max_chars_per_line as usize {
             prompt_occupied_lines = 1;
         }
-
         let h = &f.size().height;
+        let mar = ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16;
+        self.logs.push(format!("pol {}", prompt_occupied_lines));
+        self.logs.push(format!("f {}", h));
+        self.logs.push(format!("mar {}", mar));
+        self.logs.push(format!(
+            "pwidth {}, fwidth {}",
+            self.prompt.width() as f64,
+            f.size().width as f64
+        ));
+
+        self.logs.push(format!("prompt: {}", self.prompt));
         // self.logs.push(format!("{}", *h));
         // self.logs.push(format!("{}", prompt_occupied_lines / *h));
 
@@ -223,7 +235,7 @@ impl Session {
         // self.logs.push(format!("{}", *h));
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .horizontal_margin(10)
+            .horizontal_margin(HORIZONTAL_MARGIN)
             .constraints(
                 [
                     Constraint::Length(((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16),
@@ -288,8 +300,13 @@ impl Session {
             }
         }
 
-        if f.size().width as usize > self.prompt.width() {
+        if prompt_occupied_lines == 1 {
             // the prompt takes up less space than the terminal window, so allow for centering
+            self.logs.push(format!(
+                "centering fsize {} psize{}",
+                f.size().width,
+                self.prompt.width()
+            ));
             f.render_widget(
                 Paragraph::new(Spans::from(spans.clone()))
                     .alignment(Alignment::Center)
@@ -297,6 +314,7 @@ impl Session {
                 chunks[1],
             );
         } else {
+            self.logs.push("multiline".to_string());
             f.render_widget(
                 Paragraph::new(Spans::from(spans.clone())).wrap(Wrap { trim: true }),
                 chunks[1],
