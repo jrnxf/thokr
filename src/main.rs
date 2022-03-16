@@ -1,21 +1,33 @@
 mod lang;
+mod math;
 mod session;
 
 use crate::lang::Language;
+use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use itertools::Itertools;
 use session::Session;
-use std::{env, error::Error, io};
+use std::{error::Error, io};
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
     Frame, Terminal,
 };
-use unicode_width::UnicodeWidthStr;
+
+/// a typing tui written in rust
+#[derive(Parser, Debug, Clone)]
+#[clap(version, about, long_about= None)]
+pub struct Args {
+    /// Length of password
+    #[clap(short = 'w', long, default_value_t = 20)]
+    words: usize,
+
+    /// Source to pull words from
+    #[clap(short = 's', long, default_value_t = String::from("english"))]
+    source: String,
+}
 
 #[derive(PartialEq, Debug, Clone)]
 enum Screen {
@@ -25,39 +37,42 @@ enum Screen {
 
 #[derive(Debug, Clone)]
 struct App {
+    args: Option<Args>,
     session: Session,
     lang: Language,
     screen: Screen,
 }
 
 impl App {
-    fn new() -> Self {
-        let l = Language::new("src/lang/english.json");
-        let args: Vec<String> = env::args().collect();
+    fn new(args: Args) -> Self {
+        let l = Language::new(format!("src/lang/{}.json", args.source));
         Self {
             // session: Session::new(l.get_random(100).join(" ")[0..106].to_string()),
-            session: Session::new(l.get_random(args[1].parse().unwrap()).join(" ")),
+            session: Session::new(l.get_random(args.words).join(" ")),
             lang: l,
             screen: Screen::Prompt,
+            args: Some(args),
         }
     }
 
     fn reset(self: &mut Self) {
-        let l = Language::new("src/lang/english.json");
+        let a = self.args.clone().unwrap();
+        let l = Language::new(format!("src/lang/{}.json", a.source));
         self.screen = Screen::Prompt;
-        self.session = Session::new(l.get_random(15).join(" "));
+        self.session = Session::new(l.get_random(a.words).join(" "));
         self.lang = l;
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let mut app = App::new(args);
     let result = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -68,7 +83,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:?}", err)
     }
 
-    println!("{:?}", app.session.logs);
+    for x in app.session.logs {
+        println!("{:?}", x);
+    }
 
     Ok(())
 }
@@ -116,21 +133,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
             app.session.draw_prompt(f).unwrap();
         }
         Screen::Results => {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .margin(4)
-                .constraints(
-                    [
-                        // Constraint::Percentage(50),
-                        Constraint::Min(15),
-                        Constraint::Min(1),
-                        // Constraint::Percentage(50),
-                    ]
-                    .as_ref(),
-                )
-                .split(f.size());
-
-            app.session.draw_results(f, chunks).unwrap();
+            app.session.draw_results(f).unwrap();
         }
     }
 }

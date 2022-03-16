@@ -16,7 +16,7 @@ pub struct Language {
 }
 
 impl Language {
-    pub fn new(path: &str) -> Self {
+    pub fn new(path: String) -> Self {
         read_language_from_file(path).unwrap()
     }
 
