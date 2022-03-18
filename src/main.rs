@@ -15,6 +15,7 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     Frame, Terminal,
 };
+use webbrowser;
 
 /// a typing tui written in rust
 #[derive(Parser, Debug, Clone)]
@@ -114,12 +115,17 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: &mut App) -> io::Res
                             app.screen = Screen::Results;
                         }
                     }
-                    Screen::Results => {
-                        if let KeyCode::Char('r') = key.code {
+                    Screen::Results => match key.code {
+                        KeyCode::Char('t') => {
+                            webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fdevdeadly%2Fthokr", app.session.wpm, app.session.accuracy, app.session.std_dev))
+                                .unwrap();
+                        }
+                        KeyCode::Char('r') => {
                             a.session.prompt = a.lang.get_random(10).join(" ");
                             a.reset()
                         }
-                    }
+                        _ => {}
+                    },
                 },
                 _ => {}
             }

@@ -148,15 +148,8 @@ impl Session {
             self.wpm_coords
                 .push((x.0, ((60.00 / x.0) * correct_chars_pressed_until_now) / 5.0))
         }
-        self.logs.push(format!("wpm_coords {:?}", self.wpm_coords));
-        // let foo = (elapsed.unwrap().as_millis() as f64 * 1000.0) / 60.0;
-        // self.wpm_coords
-        //     .push((foo, ((char_acc as f64 * (60.0 / foo)) / 5.0) as f64));
-
-        // self.raw_coords = raw;
+        self.wpm = self.wpm_coords.last().unwrap().1.ceil() as usize;
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
-        let cpm = to_minute_ratio * correct_chars.len();
-        self.wpm = cpm / 5;
     }
 
     pub fn backspace(&mut self) {
