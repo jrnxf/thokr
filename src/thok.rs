@@ -1,5 +1,6 @@
-use crate::math::std_deviation;
+use crate::util::std_deviation;
 use itertools::Itertools;
+use log::info;
 use std::{char, collections::HashMap, fmt::Error, time::SystemTime};
 use tui::{
     backend::Backend,
@@ -12,6 +13,7 @@ use tui::{
 use unicode_width::UnicodeWidthStr;
 
 const HORIZONTAL_MARGIN: u16 = 10;
+
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
     Correct,
@@ -26,42 +28,42 @@ pub struct Input {
 }
 
 #[derive(Clone, Debug)]
-pub struct Session {
+pub struct Thok {
     pub prompt: String,
     pub input: Vec<Input>,
     pub raw_coords: Vec<(f64, f64)>,
     pub wpm_coords: Vec<(f64, f64)>,
     pub cursor_pos: usize,
     pub started_at: Option<SystemTime>,
-    pub wpm: usize,
+    pub duration: Option<f64>,
+    pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
-    pub logs: Vec<String>,
 }
 
-impl Session {
+impl Thok {
     pub fn new(prompt_string: String) -> Self {
         Self {
             prompt: prompt_string,
             input: vec![],
             raw_coords: vec![],
             wpm_coords: vec![],
-            logs: vec![],
             cursor_pos: 0,
             started_at: None,
-            wpm: 0,
+            duration: Some(10.0),
+            wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
         }
     }
 
+    pub fn on_tick(self: &mut Self) {
+        self.duration = Some(self.duration.unwrap() - 0.1);
+    }
+
     pub fn get_expected_char(&self, idx: usize) -> char {
         self.prompt.chars().nth(idx).unwrap()
     }
-
-    // pub fn get_is_input_char_correct(&self, idx: usize) -> bool {
-    //     idx < self.input.len() && self.input[idx].to_string() == self.get_expected_char(idx)
-    // }
 
     pub fn increment_cursor(&mut self) {
         if self.cursor_pos < self.input.len() {
@@ -77,7 +79,6 @@ impl Session {
 
     pub fn calc_results(&mut self) {
         let elapsed = self.started_at.unwrap().elapsed();
-        let to_minute_ratio = 60000 / elapsed.clone().unwrap().as_millis() as usize;
 
         let correct_chars = self
             .input
@@ -89,7 +90,6 @@ impl Session {
         let total_time = elapsed.unwrap().as_millis() as f64 / 1000.0;
         // TODO this causes an issue if tests takes less than 1 second
         let whole_second_limit = total_time.floor();
-        self.logs.push(format!("total_time {}", total_time));
 
         let correct_chars_per_sec: Vec<(f64, f64)> = correct_chars
             .clone()
@@ -124,20 +124,12 @@ impl Session {
             .sorted_by(|a, b| a.partial_cmp(b).unwrap())
             .collect();
 
-        self.logs
-            .push(format!("correct_chars_per_sec {:?}", correct_chars_per_sec));
-
         let correct_chars_at_whole_sec_intervals = correct_chars_per_sec
             .iter()
             .enumerate()
             .filter(|&(i, _)| i < correct_chars_per_sec.len() - 1)
             .map(|(_, x)| x.1)
             .collect::<Vec<f64>>();
-
-        self.logs.push(format!(
-            "correct_chars_at_whole_sec_intervals: {:?}",
-            correct_chars_at_whole_sec_intervals
-        ));
 
         self.std_dev = std_deviation(&correct_chars_at_whole_sec_intervals).unwrap();
 
@@ -148,7 +140,7 @@ impl Session {
             self.wpm_coords
                 .push((x.0, ((60.00 / x.0) * correct_chars_pressed_until_now) / 5.0))
         }
-        self.wpm = self.wpm_coords.last().unwrap().1.ceil() as usize;
+        self.wpm = self.wpm_coords.last().unwrap().1.ceil();
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
     }
 
@@ -159,10 +151,14 @@ impl Session {
         }
     }
 
+    pub fn start(&mut self) {
+        self.started_at = Some(SystemTime::now());
+    }
+
     pub fn write(&mut self, c: char) {
         let idx = self.input.len();
-        if idx == 0 {
-            self.started_at = Some(SystemTime::now());
+        if idx == 0 && self.started_at.is_none() {
+            self.start();
         }
 
         let outcome = if c == self.get_expected_char(idx) {
@@ -182,56 +178,31 @@ impl Session {
         self.increment_cursor();
     }
 
-    pub fn is_finished(&self) -> bool {
-        self.input.len() == self.prompt.len()
+    pub fn has_started(&self) -> bool {
+        !self.started_at.is_none()
+    }
+
+    pub fn has_finished(&self) -> bool {
+        (self.input.len() == self.prompt.len()) || self.duration.unwrap() <= 0.0
     }
 
     pub fn draw_prompt<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
         let max_chars_per_line = f.size().width - (HORIZONTAL_MARGIN * 2);
         let mut prompt_occupied_lines =
             ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
+        let time_left_lines = 2;
 
         if self.prompt.width() <= max_chars_per_line as usize {
             prompt_occupied_lines = 1;
         }
         let h = &f.size().height;
-        let mar = ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16;
-        self.logs.push(format!("pol {}", prompt_occupied_lines));
-        self.logs.push(format!("f {}", h));
-        self.logs.push(format!("mar {}", mar));
-        self.logs.push(format!(
-            "pwidth {}, fwidth {}",
-            self.prompt.width() as f64,
-            f.size().width as f64
-        ));
-
-        self.logs.push(format!("prompt: {}", self.prompt));
-        // self.logs.push(format!("{}", *h));
-        // self.logs.push(format!("{}", prompt_occupied_lines / *h));
-
-        // let percentage_occupied_by_prompt = (prompt_occupied_lines as f64 / *h as f64) * 100.0;
-        // self.logs
-        //     .push(format!("perc {}", percentage_occupied_by_prompt));
-        // self.logs.push(format!(
-        //     "other {}",
-        //     (100.0 - percentage_occupied_by_prompt) / 2.0
-        // ));
-        // self.logs.push(format!(
-        //     "{}",
-        //     ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16
-        // ));
-        // self.logs.push(format!("{}", prompt_occupied_lines));
-        // self.logs.push(format!(
-        //     "{}",
-        //     ((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16
-        // ));
-        // self.logs.push(format!("{}", *h));
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .horizontal_margin(HORIZONTAL_MARGIN)
             .constraints(
                 [
                     Constraint::Length(((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16),
+                    Constraint::Length(time_left_lines),
                     Constraint::Length(prompt_occupied_lines),
                     Constraint::Length(((*h as f64 - prompt_occupied_lines as f64) / 2.0) as u16),
                 ]
@@ -295,28 +266,35 @@ impl Session {
 
         if prompt_occupied_lines == 1 {
             // the prompt takes up less space than the terminal window, so allow for centering
-            self.logs.push(format!(
-                "centering fsize {} psize{}",
-                f.size().width,
-                self.prompt.width()
-            ));
             f.render_widget(
                 Paragraph::new(Spans::from(spans.clone()))
                     .alignment(Alignment::Center)
                     .wrap(Wrap { trim: true }),
-                chunks[1],
+                chunks[2],
             );
         } else {
-            self.logs.push("multiline".to_string());
             f.render_widget(
                 Paragraph::new(Spans::from(spans.clone())).wrap(Wrap { trim: true }),
-                chunks[1],
+                chunks[2],
             );
         }
+
+        f.render_widget(
+            Paragraph::new(Span::styled(
+                String::from(format!("{}", self.duration.unwrap().floor())),
+                Style::default()
+                    .add_modifier(Modifier::DIM)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+            chunks[1],
+        );
+
         Ok(())
     }
 
     pub fn draw_results<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
+        info!("draw_results");
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .horizontal_margin(10)
@@ -332,18 +310,11 @@ impl Session {
             }
         }
 
-        let datasets = vec![
-            // Dataset::default()
-            //     .marker(tui::symbols::Marker::Braille)
-            //     .style(Style::default().fg(Color::Magenta))
-            //     .graph_type(GraphType::Line)
-            //     .data(&self.raw_coords),
-            Dataset::default()
-                .marker(tui::symbols::Marker::Braille)
-                .style(Style::default().fg(Color::Cyan))
-                .graph_type(GraphType::Line)
-                .data(&self.wpm_coords),
-        ];
+        let datasets = vec![Dataset::default()
+            .marker(tui::symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Magenta))
+            .graph_type(GraphType::Line)
+            .data(&self.wpm_coords)];
 
         let chart = Chart::new(datasets)
             .x_axis(
@@ -354,7 +325,6 @@ impl Session {
                     .labels(vec![
                         Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
                         Span::styled(
-                            // to two decimal places of precision
                             format!("{:.2}", self.wpm_coords.last().unwrap().0 as f64),
                             Style::default().add_modifier(Modifier::BOLD),
                         ),
@@ -364,7 +334,6 @@ impl Session {
                 Axis::default()
                     .title("WPM")
                     .style(Style::default().fg(Color::Gray))
-                    // .bounds([0.0, highest_wpm_raw.max(highest_wpm) as f64])
                     .bounds([0.0, highest_wpm.round()])
                     .labels(vec![
                         Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
@@ -374,13 +343,9 @@ impl Session {
                         ),
                     ]),
             );
+
         f.render_widget(chart, chunks[0]);
 
-        let style = Style::default().add_modifier(Modifier::BOLD);
-
-        let wpm_at_sec_interval = self.wpm_coords.iter().map(|x| x.1).collect::<Vec<f64>>();
-        self.logs
-            .push(format!("wpm_at_sec_interval {:?}", wpm_at_sec_interval));
         f.render_widget(
             Paragraph::new(Span::styled(
                 String::from(format!(
@@ -389,7 +354,7 @@ impl Session {
                     self.accuracy,
                     self.std_dev
                 )),
-                style,
+                Style::default().add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
             chunks[1],
