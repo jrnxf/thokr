@@ -3,7 +3,8 @@ mod thok;
 mod util;
 
 use crate::{lang::Language, thok::Thok};
-use clap::Parser;
+use clap::{ArgEnum, Parser};
+use log::info;
 use std::{error::Error, io, sync::mpsc, thread, time::Duration};
 use termion::{
     event::Key,
@@ -21,16 +22,34 @@ use tui::{
 #[clap(version, about, long_about= None)]
 pub struct Args {
     /// Length of password
-    #[clap(short = 'w', long, default_value_t = 20)]
+    #[clap(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
-    /// The prompt to use for the test
-    #[clap(short = 'p', long, default_value_t = String::from(""))]
-    prompt: String,
+    /// Path of file to use
+    #[clap(short = 's', long)]
+    number_of_secs: Option<usize>,
 
-    /// Source to pull words from
-    #[clap(short = 's', long, default_value_t = String::from("english"))]
-    source: String,
+    /// Path of file to use
+    #[clap(short = 'f', long)]
+    file: Option<String>,
+
+    /// Language to pull words from
+    #[clap(short = 'l', long, arg_enum, default_value_t = SupportedLanguage::English)]
+    supported_language: SupportedLanguage,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, strum_macros::Display)]
+enum SupportedLanguage {
+    English,
+    English1k,
+    English10k,
+    Spanish,
+}
+
+impl SupportedLanguage {
+    fn as_lang(&self) -> Language {
+        Language::new(self.to_string().to_lowercase())
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -43,35 +62,41 @@ enum Screen {
 struct App {
     args: Option<Args>,
     thok: Thok,
-    lang: Language,
     screen: Screen,
 }
 
 impl App {
     fn new(args: Args) -> Self {
-        let l = Language::new(format!("src/lang/{}.json", args.source));
-        let p;
+        let prompt;
 
-        if args.prompt != String::from("") {
-            p = args.prompt.clone();
-        } else {
-            p = l.get_random(args.number_of_words).join(" ");
-        }
+        let language = args.supported_language.as_lang();
+
+        info!("Language selected:  {:?}", language);
+
+        prompt = language.get_random(args.number_of_words).join(" ");
 
         Self {
-            thok: Thok::new(p),
-            lang: l,
+            thok: Thok::new(prompt, args.number_of_secs),
             screen: Screen::Prompt,
             args: Some(args),
         }
     }
 
-    fn reset(self: &mut Self, new_prompt: String) {
-        let a = self.args.clone().unwrap();
-        let l = Language::new(format!("src/lang/{}.json", a.source));
+    fn reset(self: &mut Self, new_prompt: Option<String>) {
+        let prompt;
+        let args = self.args.clone().unwrap();
+        match new_prompt {
+            Some(_) => {
+                prompt = new_prompt.unwrap();
+            }
+            _ => {
+                let language = args.supported_language.as_lang();
+                prompt = language.get_random(args.number_of_words).join(" ");
+            }
+        }
+
+        self.thok = Thok::new(prompt, args.number_of_secs);
         self.screen = Screen::Prompt;
-        self.thok = Thok::new(new_prompt);
-        self.lang = l;
     }
 }
 
@@ -106,7 +131,9 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
-    let events = get_events();
+    let args = app.args.clone();
+    let events = get_events(args.unwrap().number_of_secs.unwrap_or(0) > 0);
+
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
         terminal.draw(|f| ui(f, &mut app))?;
@@ -147,6 +174,8 @@ fn run_app<B: Backend>(
                                 if app.thok.has_finished() {
                                     app.thok.calc_results();
                                     app.screen = Screen::Results;
+                                } else {
+                                    info!("not finished yet");
                                 }
                             }
                             Screen::Results => match key {
@@ -174,18 +203,10 @@ fn run_app<B: Backend>(
 
         match exit_type {
             ExitType::Restart => {
-                app.reset(app.thok.prompt.clone());
+                app.reset(Some(app.thok.prompt.clone()));
             }
             ExitType::New => {
-                let foo = app.args.clone();
-                match foo {
-                    Some(x) => {
-                        app.reset(app.lang.get_random(x.number_of_words).join(" "));
-                    }
-                    _ => {
-                        app.reset(app.lang.get_random(10).join(" "));
-                    }
-                }
+                app.reset(None);
             }
             ExitType::Quit => {
                 break;
@@ -202,14 +223,18 @@ enum Events {
     Tick,
 }
 
-fn get_events() -> mpsc::Receiver<Events> {
+fn get_events(should_tick: bool) -> mpsc::Receiver<Events> {
     let (tx, rx) = mpsc::channel();
-    let tick_x = tx.clone();
 
-    thread::spawn(move || loop {
-        tick_x.send(Events::Tick).unwrap();
-        thread::sleep(Duration::from_millis(100))
-    });
+    if should_tick {
+        let tick_x = tx.clone();
+        thread::spawn(move || loop {
+            tick_x.send(Events::Tick).unwrap();
+            thread::sleep(Duration::from_millis(100))
+        });
+    }
+
+    info!("should_tick {}", should_tick);
 
     thread::spawn(move || {
         let stdin = io::stdin();

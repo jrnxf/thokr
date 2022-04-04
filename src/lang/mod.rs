@@ -1,11 +1,12 @@
+use log::info;
 use rand::seq::SliceRandom;
 use serde::Deserialize;
-use serde_json::from_reader;
+use serde_json::from_str;
 
+use include_dir::{include_dir, Dir};
 use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
+
+static LANG_DIR: Dir = include_dir!("src/lang");
 
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
@@ -16,8 +17,8 @@ pub struct Language {
 }
 
 impl Language {
-    pub fn new(path: String) -> Self {
-        read_language_from_file(path).unwrap()
+    pub fn new(file_name: String) -> Self {
+        read_language_from_file(format!("{}.json", file_name)).unwrap()
     }
 
     pub fn get_random(&self, num: usize) -> Vec<String> {
@@ -27,11 +28,18 @@ impl Language {
     }
 }
 
-fn read_language_from_file<P: AsRef<Path>>(path: P) -> Result<Language, Box<dyn Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
+fn read_language_from_file(file_name: String) -> Result<Language, Box<dyn Error>> {
+    info!("file_name {}", file_name);
+    info!("LANG_DIR {:?}", LANG_DIR);
+    let file = LANG_DIR
+        .get_file(file_name)
+        .expect("Language file not found");
 
-    let lang = from_reader(reader)?;
+    let file_as_str = file
+        .contents_utf8()
+        .expect("Unable to interpret file as a string");
+
+    let lang = from_str(file_as_str).expect("Unable to deserialize language json");
 
     Ok(lang)
 }

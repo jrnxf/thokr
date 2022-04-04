@@ -42,7 +42,12 @@ pub struct Thok {
 }
 
 impl Thok {
-    pub fn new(prompt_string: String) -> Self {
+    pub fn new(prompt_string: String, duration: Option<usize>) -> Self {
+        let duration = match duration {
+            Some(d) => Some(d as f64),
+            _ => None,
+        };
+
         Self {
             prompt: prompt_string,
             input: vec![],
@@ -50,7 +55,7 @@ impl Thok {
             wpm_coords: vec![],
             cursor_pos: 0,
             started_at: None,
-            duration: Some(10.0),
+            duration,
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
@@ -58,6 +63,7 @@ impl Thok {
     }
 
     pub fn on_tick(self: &mut Self) {
+        info!("on_tick");
         self.duration = Some(self.duration.unwrap() - 0.1);
     }
 
@@ -156,6 +162,7 @@ impl Thok {
     }
 
     pub fn write(&mut self, c: char) {
+        info!("write start");
         let idx = self.input.len();
         if idx == 0 && self.started_at.is_none() {
             self.start();
@@ -176,6 +183,7 @@ impl Thok {
             },
         );
         self.increment_cursor();
+        info!("write end");
     }
 
     pub fn has_started(&self) -> bool {
@@ -183,7 +191,8 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        (self.input.len() == self.prompt.len()) || self.duration.unwrap() <= 0.0
+        (self.input.len() == self.prompt.len())
+            || (self.duration.is_some() && self.duration.unwrap() <= 0.0)
     }
 
     pub fn draw_prompt<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
@@ -213,8 +222,15 @@ impl Thok {
         let mut spans = vec![];
 
         let mut idx = 0;
+        info!("The prompt is {}", self.prompt);
         loop {
-            let expected_char = self.prompt.chars().nth(idx).unwrap().to_string();
+            let expected_char = self
+                .prompt
+                .chars()
+                .nth(idx)
+                .expect("Unable to process char")
+                // TODO: chars with accents (like pequeño) fail here
+                .to_string();
             let (span, style);
 
             let correct_input =
@@ -279,17 +295,18 @@ impl Thok {
             );
         }
 
-        f.render_widget(
-            Paragraph::new(Span::styled(
-                String::from(format!("{}", self.duration.unwrap().floor())),
-                Style::default()
-                    .add_modifier(Modifier::DIM)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-            chunks[1],
-        );
-
+        if self.duration.is_some() {
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    String::from(format!("{}", self.duration.unwrap().floor())),
+                    Style::default()
+                        .add_modifier(Modifier::DIM)
+                        .add_modifier(Modifier::BOLD),
+                ))
+                .alignment(Alignment::Center),
+                chunks[1],
+            );
+        }
         Ok(())
     }
 
