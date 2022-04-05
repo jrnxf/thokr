@@ -4,7 +4,6 @@ mod util;
 
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, Parser};
-use log::info;
 use std::{error::Error, io, sync::mpsc, thread, time::Duration};
 use termion::{
     event::Key,
@@ -70,8 +69,6 @@ impl App {
         let prompt;
 
         let language = args.supported_language.as_lang();
-
-        info!("Language selected:  {:?}", language);
 
         prompt = language.get_random(args.number_of_words).join(" ");
 
@@ -144,10 +141,12 @@ fn run_app<B: Backend>(
                 Events::Tick => {
                     if app.thok.has_started() && !app.thok.has_finished() {
                         app.thok.on_tick();
+
+                        if app.thok.has_finished() && app.screen == Screen::Prompt {
+                            app.thok.calc_results();
+                            app.screen = Screen::Results;
+                        }
                         terminal.draw(|f| ui(f, app))?;
-                    } else if app.thok.has_finished() && app.screen == Screen::Prompt {
-                        app.thok.calc_results();
-                        app.screen = Screen::Results;
                     }
                 }
                 Events::Input(key) => {
@@ -174,8 +173,6 @@ fn run_app<B: Backend>(
                                 if app.thok.has_finished() {
                                     app.thok.calc_results();
                                     app.screen = Screen::Results;
-                                } else {
-                                    info!("not finished yet");
                                 }
                             }
                             Screen::Results => match key {
@@ -233,8 +230,6 @@ fn get_events(should_tick: bool) -> mpsc::Receiver<Events> {
             thread::sleep(Duration::from_millis(100))
         });
     }
-
-    info!("should_tick {}", should_tick);
 
     thread::spawn(move || {
         let stdin = io::stdin();

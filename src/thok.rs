@@ -1,6 +1,5 @@
 use crate::util::std_deviation;
 use itertools::Itertools;
-use log::info;
 use std::{char, collections::HashMap, fmt::Error, time::SystemTime};
 use tui::{
     backend::Backend,
@@ -63,7 +62,6 @@ impl Thok {
     }
 
     pub fn on_tick(self: &mut Self) {
-        info!("on_tick");
         self.duration = Some(self.duration.unwrap() - 0.1);
     }
 
@@ -137,7 +135,11 @@ impl Thok {
             .map(|(_, x)| x.1)
             .collect::<Vec<f64>>();
 
-        self.std_dev = std_deviation(&correct_chars_at_whole_sec_intervals).unwrap();
+        if correct_chars_at_whole_sec_intervals.len() > 0 {
+            self.std_dev = std_deviation(&correct_chars_at_whole_sec_intervals).unwrap();
+        } else {
+            self.std_dev = 0.0;
+        }
 
         let mut correct_chars_pressed_until_now = 0.0;
 
@@ -146,7 +148,12 @@ impl Thok {
             self.wpm_coords
                 .push((x.0, ((60.00 / x.0) * correct_chars_pressed_until_now) / 5.0))
         }
-        self.wpm = self.wpm_coords.last().unwrap().1.ceil();
+
+        if self.wpm_coords.len() > 0 {
+            self.wpm = self.wpm_coords.last().unwrap().1.ceil();
+        } else {
+            self.wpm = 0.0;
+        }
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
     }
 
@@ -162,7 +169,6 @@ impl Thok {
     }
 
     pub fn write(&mut self, c: char) {
-        info!("write start");
         let idx = self.input.len();
         if idx == 0 && self.started_at.is_none() {
             self.start();
@@ -183,7 +189,6 @@ impl Thok {
             },
         );
         self.increment_cursor();
-        info!("write end");
     }
 
     pub fn has_started(&self) -> bool {
@@ -222,7 +227,7 @@ impl Thok {
         let mut spans = vec![];
 
         let mut idx = 0;
-        info!("The prompt is {}", self.prompt);
+
         loop {
             let expected_char = self
                 .prompt
@@ -298,7 +303,7 @@ impl Thok {
         if self.duration.is_some() {
             f.render_widget(
                 Paragraph::new(Span::styled(
-                    String::from(format!("{}", self.duration.unwrap().floor())),
+                    String::from(format!("{:.1}", self.duration.unwrap())),
                     Style::default()
                         .add_modifier(Modifier::DIM)
                         .add_modifier(Modifier::BOLD),
@@ -311,7 +316,6 @@ impl Thok {
     }
 
     pub fn draw_results<B: Backend>(&mut self, f: &mut Frame<B>) -> Result<(), Error> {
-        info!("draw_results");
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .horizontal_margin(10)
@@ -333,16 +337,27 @@ impl Thok {
             .graph_type(GraphType::Line)
             .data(&self.wpm_coords)];
 
+        let mut overall_duration = match self.wpm_coords.last() {
+            Some(x) => x.0,
+            _ => self.duration.unwrap_or(1.0),
+        };
+
+        overall_duration = if overall_duration < 1.0 {
+            1.0
+        } else {
+            overall_duration
+        };
+
         let chart = Chart::new(datasets)
             .x_axis(
                 Axis::default()
                     .title("SECONDS")
                     .style(Style::default().fg(Color::Gray))
-                    .bounds([1.0, self.wpm_coords.last().unwrap().0 as f64])
+                    .bounds([1.0, overall_duration])
                     .labels(vec![
                         Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
                         Span::styled(
-                            format!("{:.2}", self.wpm_coords.last().unwrap().0 as f64),
+                            format!("{:.2}", overall_duration),
                             Style::default().add_modifier(Modifier::BOLD),
                         ),
                     ]),
@@ -367,9 +382,7 @@ impl Thok {
             Paragraph::new(Span::styled(
                 String::from(format!(
                     "{} WPM   {}% ACC   {:.2} SD",
-                    self.wpm_coords.last().unwrap().1.ceil(),
-                    self.accuracy,
-                    self.std_dev
+                    self.wpm, self.accuracy, self.std_dev
                 )),
                 Style::default().add_modifier(Modifier::BOLD),
             ))
