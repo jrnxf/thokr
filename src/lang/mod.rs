@@ -1,4 +1,3 @@
-use log::info;
 use rand::seq::SliceRandom;
 use serde::Deserialize;
 use serde_json::from_str;
@@ -29,8 +28,6 @@ impl Language {
 }
 
 fn read_language_from_file(file_name: String) -> Result<Language, Box<dyn Error>> {
-    info!("file_name {}", file_name);
-    info!("LANG_DIR {:?}", LANG_DIR);
     let file = LANG_DIR
         .get_file(file_name)
         .expect("Language file not found");

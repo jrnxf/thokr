@@ -3,13 +3,20 @@ mod thok;
 mod util;
 
 use crate::{lang::Language, thok::Thok};
-use clap::{ArgEnum, Parser};
-use std::{error::Error, io, sync::mpsc, thread, time::Duration};
+use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
+use std::{
+    error::Error,
+    io::{self, stdout, Write},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 use termion::{
     event::Key,
-    input::{MouseTerminal, TermRead},
+    input::TermRead,
+    is_tty,
     raw::IntoRawMode,
-    screen::AlternateScreen,
+    screen::{AlternateScreen, ToMainScreen},
 };
 use tui::{
     backend::{Backend, TermionBackend},
@@ -19,7 +26,7 @@ use tui::{
 /// a typing tui written in rust
 #[derive(Parser, Debug, Clone)]
 #[clap(version, about, long_about= None)]
-pub struct Args {
+pub struct Cli {
     /// Length of password
     #[clap(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
@@ -28,9 +35,9 @@ pub struct Args {
     #[clap(short = 's', long)]
     number_of_secs: Option<usize>,
 
-    /// Path of file to use
-    #[clap(short = 'f', long)]
-    file: Option<String>,
+    /// Custom prompt to use
+    #[clap(short = 'p', long)]
+    prompt: Option<String>,
 
     /// Language to pull words from
     #[clap(short = 'l', long, arg_enum, default_value_t = SupportedLanguage::English)]
@@ -59,58 +66,79 @@ enum Screen {
 
 #[derive(Debug, Clone)]
 struct App {
-    args: Option<Args>,
+    cli: Option<Cli>,
     thok: Thok,
     screen: Screen,
 }
 
 impl App {
-    fn new(args: Args) -> Self {
+    fn new(cli: Cli) -> Self {
         let prompt;
 
-        let language = args.supported_language.as_lang();
+        if cli.prompt.is_some() {
+            prompt = cli.prompt.clone().unwrap();
+        } else {
+            let language = cli.supported_language.as_lang();
 
-        prompt = language.get_random(args.number_of_words).join(" ");
+            prompt = language.get_random(cli.number_of_words).join(" ");
+        }
 
         Self {
-            thok: Thok::new(prompt, args.number_of_secs),
+            thok: Thok::new(prompt, cli.number_of_secs),
             screen: Screen::Prompt,
-            args: Some(args),
+            cli: Some(cli),
         }
     }
 
     fn reset(self: &mut Self, new_prompt: Option<String>) {
         let prompt;
-        let args = self.args.clone().unwrap();
+        let cli = self.cli.clone().unwrap();
         match new_prompt {
             Some(_) => {
                 prompt = new_prompt.unwrap();
             }
             _ => {
-                let language = args.supported_language.as_lang();
-                prompt = language.get_random(args.number_of_words).join(" ");
+                let language = cli.supported_language.as_lang();
+                prompt = language.get_random(cli.number_of_words).join(" ");
             }
         }
 
-        self.thok = Thok::new(prompt, args.number_of_secs);
+        self.thok = Thok::new(prompt, cli.number_of_secs);
         self.screen = Screen::Prompt;
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    simple_logging::log_to_file("out.log", log::LevelFilter::Info).unwrap();
-    // check for input on stdin here, if it exists, store it,
-    // otherwise continue
-    let args = Args::parse();
+    let mut cmd = Cli::command();
 
-    let stdout = io::stdout().into_raw_mode()?;
-    let stdout = MouseTerminal::from(stdout);
-    let stdout = AlternateScreen::from(stdout);
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    if !is_tty(&io::stdin()) {
+        cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
+    }
 
-    let mut app = App::new(args);
-    let result = run_app(&mut terminal, &mut app);
+    let result;
+    {
+        simple_logging::log_to_file("out.log", log::LevelFilter::Info).unwrap();
+        // check for input on stdin here, if it exists, store it,
+        // otherwise continue
+        let cli = Cli::parse();
+
+        let screen = AlternateScreen::from(
+            stdout()
+                // handle stdin manually instead of printing it
+                .into_raw_mode()?,
+        );
+        let backend = TermionBackend::new(screen);
+        let mut terminal = Terminal::new(backend)?;
+
+        let mut app = App::new(cli);
+        result = run_app(&mut terminal, &mut app);
+
+        terminal.flush()?;
+    }
+
+    let mut screen = stdout();
+    write!(screen, "{}", ToMainScreen).unwrap();
+    screen.flush()?;
 
     if let Err(err) = result {
         println!("{:?}", err)
@@ -128,8 +156,8 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
-    let args = app.args.clone();
-    let events = get_events(args.unwrap().number_of_secs.unwrap_or(0) > 0);
+    let cli = app.cli.clone();
+    let events = get_events(cli.unwrap().number_of_secs.unwrap_or(0) > 0);
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
