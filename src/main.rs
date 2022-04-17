@@ -1,25 +1,25 @@
 mod lang;
 mod thok;
+mod ui;
 mod util;
 
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    tty::IsTty,
+};
 use std::{
     error::Error,
-    io::{self, stdout, Write},
+    io::{self, stdin},
     sync::mpsc,
     thread,
     time::Duration,
 };
-use termion::{
-    event::Key,
-    input::TermRead,
-    is_tty,
-    raw::IntoRawMode,
-    screen::{AlternateScreen, ToMainScreen},
-};
 use tui::{
-    backend::{Backend, TermionBackend},
+    backend::{Backend, CrosstermBackend},
     Frame, Terminal,
 };
 
@@ -27,29 +27,28 @@ use tui::{
 #[derive(Parser, Debug, Clone)]
 #[clap(version, about, long_about= None)]
 pub struct Cli {
-    /// Length of password
+    /// number of words to use in test
     #[clap(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
-    /// Path of file to use
+    /// number of seconds to run test
     #[clap(short = 's', long)]
     number_of_secs: Option<usize>,
 
-    /// Custom prompt to use
+    /// custom prompt to use
     #[clap(short = 'p', long)]
     prompt: Option<String>,
 
-    /// Language to pull words from
+    /// language to pull words from
     #[clap(short = 'l', long, arg_enum, default_value_t = SupportedLanguage::English)]
     supported_language: SupportedLanguage,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ArgEnum, strum_macros::Display)]
+#[derive(Debug, Copy, Clone, ArgEnum, strum_macros::Display)]
 enum SupportedLanguage {
     English,
     English1k,
     English10k,
-    Spanish,
 }
 
 impl SupportedLanguage {
@@ -58,17 +57,10 @@ impl SupportedLanguage {
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
-enum Screen {
-    Prompt,
-    Results,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct App {
     cli: Option<Cli>,
     thok: Thok,
-    screen: Screen,
 }
 
 impl App {
@@ -85,7 +77,6 @@ impl App {
 
         Self {
             thok: Thok::new(prompt, cli.number_of_secs),
-            screen: Screen::Prompt,
             cli: Some(cli),
         }
     }
@@ -104,41 +95,36 @@ impl App {
         }
 
         self.thok = Thok::new(prompt, cli.number_of_secs);
-        self.screen = Screen::Prompt;
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut cmd = Cli::command();
 
-    if !is_tty(&io::stdin()) {
+    if !stdin().is_tty() {
         cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
     }
 
     let result;
     {
-        simple_logging::log_to_file("out.log", log::LevelFilter::Info).unwrap();
-        // check for input on stdin here, if it exists, store it,
-        // otherwise continue
         let cli = Cli::parse();
 
-        let screen = AlternateScreen::from(
-            stdout()
-                // handle stdin manually instead of printing it
-                .into_raw_mode()?,
-        );
-        let backend = TermionBackend::new(screen);
+        enable_raw_mode()?;
+
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen)?;
+        let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
+        // create app and run it
         let mut app = App::new(cli);
-        result = run_app(&mut terminal, &mut app);
+        result = start_tui(&mut terminal, &mut app);
 
-        terminal.flush()?;
+        // restore terminal
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
+        terminal.show_cursor()?;
     }
-
-    let mut screen = stdout();
-    write!(screen, "{}", ToMainScreen).unwrap();
-    screen.flush()?;
 
     if let Err(err) = result {
         println!("{:?}", err)
@@ -152,7 +138,7 @@ enum ExitType {
     New,
     Quit,
 }
-fn run_app<B: Backend>(
+fn start_tui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
@@ -162,6 +148,7 @@ fn run_app<B: Backend>(
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
         terminal.draw(|f| ui(f, &mut app))?;
+
         loop {
             let app = &mut app;
 
@@ -170,49 +157,47 @@ fn run_app<B: Backend>(
                     if app.thok.has_started() && !app.thok.has_finished() {
                         app.thok.on_tick();
 
-                        if app.thok.has_finished() && app.screen == Screen::Prompt {
+                        if app.thok.has_finished() {
                             app.thok.calc_results();
-                            app.screen = Screen::Results;
                         }
                         terminal.draw(|f| ui(f, app))?;
                     }
                 }
                 Events::Input(key) => {
                     match key {
-                        Key::Esc => {
+                        KeyCode::Esc => {
                             break;
                         }
-                        Key::Backspace => {
-                            if app.screen == Screen::Prompt {
+                        KeyCode::Backspace => {
+                            if !app.thok.has_finished() {
                                 app.thok.backspace();
                             }
                         }
-                        Key::Left => {
+                        KeyCode::Left => {
                             exit_type = ExitType::Restart;
                             break;
                         }
-                        Key::Right => {
+                        KeyCode::Right => {
                             exit_type = ExitType::New;
                             break;
                         }
-                        Key::Char(c) => match app.screen {
-                            Screen::Prompt => {
+                        KeyCode::Char(c) => match app.thok.has_finished() {
+                            false => {
                                 app.thok.write(c);
                                 if app.thok.has_finished() {
                                     app.thok.calc_results();
-                                    app.screen = Screen::Results;
                                 }
                             }
-                            Screen::Results => match key {
-                                Key::Char('t') => {
+                            true => match key {
+                                KeyCode::Char('t') => {
                                     webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fdevdeadly%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
                                 .unwrap();
                                 }
-                                Key::Char('r') => {
+                                KeyCode::Char('r') => {
                                     exit_type = ExitType::Restart;
                                     break;
                                 }
-                                Key::Char('n') => {
+                                KeyCode::Char('n') => {
                                     exit_type = ExitType::New;
                                     break;
                                 }
@@ -244,7 +229,7 @@ fn run_app<B: Backend>(
 
 #[derive(Clone)]
 enum Events {
-    Input(Key),
+    Input(KeyCode),
     Tick,
 }
 
@@ -259,10 +244,9 @@ fn get_events(should_tick: bool) -> mpsc::Receiver<Events> {
         });
     }
 
-    thread::spawn(move || {
-        let stdin = io::stdin();
-        for key in stdin.keys().flatten() {
-            tx.send(Events::Input(key)).unwrap();
+    thread::spawn(move || loop {
+        if let Event::Key(key) = event::read().unwrap() {
+            tx.send(Events::Input(key.code)).unwrap();
         }
     });
 
@@ -270,12 +254,5 @@ fn get_events(should_tick: bool) -> mpsc::Receiver<Events> {
 }
 
 fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    match app.screen {
-        Screen::Prompt => {
-            app.thok.draw_prompt(f).unwrap();
-        }
-        Screen::Results => {
-            app.thok.draw_results(f).unwrap();
-        }
-    }
+    f.render_widget(&app.thok, f.size());
 }
