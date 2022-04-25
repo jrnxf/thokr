@@ -13,6 +13,24 @@ const HORIZONTAL_MARGIN: u16 = 10;
 
 impl Widget for &Thok {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // styles
+        let bold_style = Style::default().add_modifier(Modifier::BOLD);
+
+        let green_bold_style = Style::default().patch(bold_style).fg(Color::Green);
+        let red_bold_style = Style::default().patch(bold_style).fg(Color::Red);
+
+        let dim_bold_style = Style::default()
+            .patch(bold_style)
+            .add_modifier(Modifier::DIM);
+
+        let underlined_dim_bold_style = Style::default()
+            .patch(dim_bold_style)
+            .add_modifier(Modifier::UNDERLINED);
+
+        let italic_style = Style::default().add_modifier(Modifier::ITALIC);
+
+        let magenta_style = Style::default().fg(Color::Magenta);
+
         match !self.has_finished() {
             true => {
                 let max_chars_per_line = area.width - (HORIZONTAL_MARGIN * 2);
@@ -49,21 +67,22 @@ impl Widget for &Thok {
                     .map(|(idx, input)| {
                         Span::styled(
                             self.get_expected_char(idx).to_string(),
-                            Style::default()
-                                .fg(match input.outcome {
-                                    Outcome::Correct => Color::Green,
-                                    Outcome::Incorrect => Color::Red,
-                                })
-                                .add_modifier(Modifier::BOLD),
+                            match input.outcome {
+                                Outcome::Correct => green_bold_style,
+                                Outcome::Incorrect => red_bold_style,
+                            },
                         )
                     })
                     .collect::<Vec<Span>>();
 
                 spans.push(Span::styled(
-                    self.prompt[self.cursor_pos..self.prompt.len()].to_string(),
-                    Style::default()
-                        .add_modifier(Modifier::DIM)
-                        .add_modifier(Modifier::BOLD),
+                    self.get_expected_char(self.cursor_pos).to_string(),
+                    underlined_dim_bold_style,
+                ));
+
+                spans.push(Span::styled(
+                    self.prompt[(self.cursor_pos + 1)..self.prompt.len()].to_string(),
+                    dim_bold_style,
                 ));
 
                 let widget = match prompt_occupied_lines {
@@ -78,9 +97,7 @@ impl Widget for &Thok {
                 if self.duration.is_some() {
                     let timer = Paragraph::new(Span::styled(
                         format!("{:.1}", self.duration.unwrap()),
-                        Style::default()
-                            .add_modifier(Modifier::DIM)
-                            .add_modifier(Modifier::BOLD),
+                        dim_bold_style,
                     ))
                     .alignment(Alignment::Center);
 
@@ -96,7 +113,7 @@ impl Widget for &Thok {
                         [
                             Constraint::Percentage(90),
                             Constraint::Length(1),
-                            Constraint::Length(1), // for spacing
+                            Constraint::Length(1), // for padding
                             Constraint::Length(1),
                         ]
                         .as_ref(),
@@ -113,7 +130,7 @@ impl Widget for &Thok {
 
                 let datasets = vec![Dataset::default()
                     .marker(tui::symbols::Marker::Braille)
-                    .style(Style::default().fg(Color::Magenta))
+                    .style(magenta_style)
                     .graph_type(GraphType::Line)
                     .data(&self.wpm_coords)];
 
@@ -132,27 +149,19 @@ impl Widget for &Thok {
                     .x_axis(
                         Axis::default()
                             .title("seconds")
-                            .style(Style::default().fg(Color::Gray))
                             .bounds([1.0, overall_duration])
                             .labels(vec![
-                                Span::styled("1", Style::default().add_modifier(Modifier::BOLD)),
-                                Span::styled(
-                                    format!("{:.2}", overall_duration),
-                                    Style::default().add_modifier(Modifier::BOLD),
-                                ),
+                                Span::styled("1", bold_style),
+                                Span::styled(format!("{:.2}", overall_duration), bold_style),
                             ]),
                     )
                     .y_axis(
                         Axis::default()
                             .title("wpm")
-                            .style(Style::default().fg(Color::Gray))
                             .bounds([0.0, highest_wpm.round()])
                             .labels(vec![
-                                Span::styled("0", Style::default().add_modifier(Modifier::BOLD)),
-                                Span::styled(
-                                    format!("{}", highest_wpm.round()),
-                                    Style::default().add_modifier(Modifier::BOLD),
-                                ),
+                                Span::styled("0", bold_style),
+                                Span::styled(format!("{}", highest_wpm.round()), bold_style),
                             ]),
                     );
 
@@ -163,7 +172,7 @@ impl Widget for &Thok {
                         "{} wpm   {}% acc   {:.2} sd",
                         self.wpm, self.accuracy, self.std_dev
                     ),
-                    Style::default().add_modifier(Modifier::BOLD),
+                    bold_style,
                 ))
                 .alignment(Alignment::Center);
 
@@ -171,7 +180,7 @@ impl Widget for &Thok {
 
                 let legend = Paragraph::new(Span::styled(
                     String::from("(r)etry / (n)ew / (t)weet / (esc)ape"),
-                    Style::default().add_modifier(Modifier::ITALIC),
+                    italic_style,
                 ));
 
                 legend.render(chunks[3], buf);
