@@ -811,7 +811,7 @@ dependencies = [
 
 [[package]]
 name = "thokr"
-version = "0.0.1"
+version = "0.0.2"
 dependencies = [
  "clap",
  "crossterm 0.23.2",
