@@ -1,7 +1,15 @@
 [package]
 name = "thokr"
+description = "a sleek typing tui written in rust"
 version = "0.0.1"
+readme = "README.md"
+repository = "https://github.com/coloradocolby/thokr.git"
+homepage = "https://github.com/coloradocolby/thokr"
+license = "MIT"
+authors = ["Colby Thomas <coloradocolby@gmail.com>"]
 edition = "2021"
+exclude = ["assets/*", ".github", "*.log", "Dockerfile"]
+keywords = ["tui", "terminal", "typing"]
 
 [dependencies]
 tui = { version = "0.17", default-features = false, features = ['crossterm'] }
