@@ -15,10 +15,10 @@ keywords = ["tui", "terminal", "typing"]
 tui = { version = "0.17", default-features = false, features = ['crossterm'] }
 serde = { version = "1.0", features = ["derive"] }
 clap = { version = "3.1.1", features = ["derive"] }
-serde_json = "*"
+serde_json = "1.0.79"
 rand = "0.8.5"
 itertools = "0.10.3"
-unicode-width = "*"
+unicode-width = "0.1.9"
 webbrowser = "0.6.0"
 crossterm = "0.23.2"
 strum_macros = "0.24.0"
