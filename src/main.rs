@@ -95,6 +95,8 @@ impl App {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse();
+
     if !stdin().is_tty() {
         let mut cmd = Cli::command();
         cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
@@ -107,7 +109,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let cli = Cli::parse();
     let mut app = App::new(cli);
     start_tui(&mut terminal, &mut app)?;
 
