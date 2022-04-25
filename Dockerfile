@@ -4,12 +4,13 @@ RUN USER=root
 
 RUN mkdir thokr
 WORKDIR /thokr
-COPY . ./
 
 
 RUN rustup target add x86_64-unknown-linux-musl 
 RUN apt update 
 RUN apt -y install musl-tools musl-dev build-essential gcc-x86-64-linux-gnu
+
+COPY . ./
 
 ENV RUSTFLAGS='-C linker=x86_64-linux-gnu-gcc'
 RUN cargo build --target x86_64-unknown-linux-musl --release
