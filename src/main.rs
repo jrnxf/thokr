@@ -23,7 +23,7 @@ use tui::{
     Frame, Terminal,
 };
 
-/// a typing tui written in rust
+/// a sleek typing tui written in rust
 #[derive(Parser, Debug, Clone)]
 #[clap(version, about, long_about= None)]
 pub struct Cli {
@@ -65,15 +65,13 @@ struct App {
 
 impl App {
     fn new(cli: Cli) -> Self {
-        let prompt;
-
-        if cli.prompt.is_some() {
-            prompt = cli.prompt.clone().unwrap();
+        let prompt = if cli.prompt.is_some() {
+            cli.prompt.clone().unwrap()
         } else {
             let language = cli.supported_language.as_lang();
 
-            prompt = language.get_random(cli.number_of_words).join(" ");
-        }
+            language.get_random(cli.number_of_words).join(" ")
+        };
 
         Self {
             thok: Thok::new(prompt, cli.number_of_secs),
@@ -81,54 +79,41 @@ impl App {
         }
     }
 
-    fn reset(self: &mut Self, new_prompt: Option<String>) {
-        let prompt;
+    fn reset(&mut self, new_prompt: Option<String>) {
         let cli = self.cli.clone().unwrap();
-        match new_prompt {
-            Some(_) => {
-                prompt = new_prompt.unwrap();
-            }
+
+        let prompt = match new_prompt {
+            Some(_) => new_prompt.unwrap(),
             _ => {
                 let language = cli.supported_language.as_lang();
-                prompt = language.get_random(cli.number_of_words).join(" ");
+                language.get_random(cli.number_of_words).join(" ")
             }
-        }
+        };
 
         self.thok = Thok::new(prompt, cli.number_of_secs);
     }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut cmd = Cli::command();
-
     if !stdin().is_tty() {
+        let mut cmd = Cli::command();
         cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
     }
 
-    let result;
-    {
-        let cli = Cli::parse();
+    enable_raw_mode()?;
 
-        enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
 
-        let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+    let cli = Cli::parse();
+    let mut app = App::new(cli);
+    start_tui(&mut terminal, &mut app)?;
 
-        // create app and run it
-        let mut app = App::new(cli);
-        result = start_tui(&mut terminal, &mut app);
-
-        // restore terminal
-        disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
-        terminal.show_cursor()?;
-    }
-
-    if let Err(err) = result {
-        println!("{:?}", err)
-    }
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
+    terminal.show_cursor()?;
 
     Ok(())
 }
@@ -147,7 +132,7 @@ fn start_tui<B: Backend>(
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
-        terminal.draw(|f| ui(f, &mut app))?;
+        terminal.draw(|f| ui(f, app))?;
 
         loop {
             let app = &mut app;
@@ -190,7 +175,7 @@ fn start_tui<B: Backend>(
                             }
                             true => match key {
                                 KeyCode::Char('t') => {
-                                    webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fdevdeadly%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
+                                    webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
                                 .unwrap();
                                 }
                                 KeyCode::Char('r') => {

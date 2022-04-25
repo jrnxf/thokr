@@ -15,6 +15,7 @@ pub struct Input {
     pub timestamp: SystemTime,
 }
 
+/// represents a test being displayed to the user
 #[derive(Debug)]
 pub struct Thok {
     pub prompt: String,
@@ -31,10 +32,7 @@ pub struct Thok {
 
 impl Thok {
     pub fn new(prompt_string: String, duration: Option<usize>) -> Self {
-        let duration = match duration {
-            Some(d) => Some(d as f64),
-            _ => None,
-        };
+        let duration = duration.map(|d| d as f64);
 
         Self {
             prompt: prompt_string,
@@ -50,7 +48,7 @@ impl Thok {
         }
     }
 
-    pub fn on_tick(self: &mut Self) {
+    pub fn on_tick(&mut self) {
         self.duration = Some(self.duration.unwrap() - 0.1);
     }
 
@@ -81,7 +79,7 @@ impl Thok {
             .collect::<Vec<Input>>();
 
         let total_time = elapsed.unwrap().as_millis() as f64 / 1000.0;
-        // TODO this causes an issue if tests takes less than 1 second
+
         let whole_second_limit = total_time.floor();
 
         let correct_chars_per_sec: Vec<(f64, f64)> = correct_chars
@@ -102,17 +100,16 @@ impl Thok {
                         // this accounts for the initiated keypress at 0.000
                         num_secs = 1.;
                     } else {
-                        num_secs = num_secs.clone().ceil()
+                        num_secs = num_secs.ceil()
                     }
                 } else {
-                    num_secs = total_time.clone();
+                    num_secs = total_time;
                 }
 
                 *map.entry(num_secs.to_string()).or_insert(0) += 1;
                 map
             })
             .into_iter()
-            // .map(|(k, v)| (k.parse::<f64>().unwrap(), ((v * 60) / 5) as f64))
             .map(|(k, v)| (k.parse::<f64>().unwrap(), v as f64))
             .sorted_by(|a, b| a.partial_cmp(b).unwrap())
             .collect();
@@ -124,7 +121,7 @@ impl Thok {
             .map(|(_, x)| x.1)
             .collect::<Vec<f64>>();
 
-        if correct_chars_at_whole_sec_intervals.len() > 0 {
+        if !correct_chars_at_whole_sec_intervals.is_empty() {
             self.std_dev = std_deviation(&correct_chars_at_whole_sec_intervals).unwrap();
         } else {
             self.std_dev = 0.0;
@@ -132,13 +129,13 @@ impl Thok {
 
         let mut correct_chars_pressed_until_now = 0.0;
 
-        for x in correct_chars_per_sec.clone() {
+        for x in correct_chars_per_sec {
             correct_chars_pressed_until_now += x.1;
             self.wpm_coords
                 .push((x.0, ((60.00 / x.0) * correct_chars_pressed_until_now) / 5.0))
         }
 
-        if self.wpm_coords.len() > 0 {
+        if !self.wpm_coords.is_empty() {
             self.wpm = self.wpm_coords.last().unwrap().1.ceil();
         } else {
             self.wpm = 0.0;
@@ -181,7 +178,7 @@ impl Thok {
     }
 
     pub fn has_started(&self) -> bool {
-        !self.started_at.is_none()
+        self.started_at.is_some()
     }
 
     pub fn has_finished(&self) -> bool {

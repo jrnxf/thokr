@@ -77,7 +77,7 @@ impl Widget for &Thok {
 
                 if self.duration.is_some() {
                     let timer = Paragraph::new(Span::styled(
-                        String::from(format!("{:.1}", self.duration.unwrap())),
+                        format!("{:.1}", self.duration.unwrap()),
                         Style::default()
                             .add_modifier(Modifier::DIM)
                             .add_modifier(Modifier::BOLD),
@@ -159,10 +159,10 @@ impl Widget for &Thok {
                 chart.render(chunks[0], buf);
 
                 let stats = Paragraph::new(Span::styled(
-                    String::from(format!(
+                    format!(
                         "{} wpm   {}% acc   {:.2} sd",
                         self.wpm, self.accuracy, self.std_dev
-                    )),
+                    ),
                     Style::default().add_modifier(Modifier::BOLD),
                 ))
                 .alignment(Alignment::Center);
