@@ -1,4 +1,4 @@
-use crate::util::std_deviation;
+use crate::util::std_dev;
 use itertools::Itertools;
 use std::{char, collections::HashMap, time::SystemTime};
 
@@ -122,7 +122,7 @@ impl Thok {
             .collect::<Vec<f64>>();
 
         if !correct_chars_at_whole_sec_intervals.is_empty() {
-            self.std_dev = std_deviation(&correct_chars_at_whole_sec_intervals).unwrap();
+            self.std_dev = std_dev(&correct_chars_at_whole_sec_intervals).unwrap();
         } else {
             self.std_dev = 0.0;
         }
