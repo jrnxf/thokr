@@ -29,7 +29,7 @@ $ docker run -it coloradocolby/thokr
 
 On Arch Linux, you can install it from AUR:
 
-``` bash
+``` sh
 paru -S thokr-git
 ```
 
