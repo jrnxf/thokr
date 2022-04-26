@@ -31,11 +31,10 @@ merge of your pull request!
 
 <!-- to check an item, place an "x" in the box like so: "- [x] Documentation" -->
 
-- [ ] Documentation
-- [ ] Tests
-- [ ] TypeScript Types
-- [ ] Flow Types
-- [ ] Ready to be merged
+- [x] Documentation added
+- [ ] Tests added
+- [ ] No linting errors / broken tests
+- [ ] Merge ready
       <!-- In your opinion, is this ready to be merged as soon as it's reviewed? -->
 
 <!-- feel free to add additional comments -->
