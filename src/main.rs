@@ -22,6 +22,7 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     Frame, Terminal,
 };
+use webbrowser::Browser;
 
 /// a sleek typing tui written in rust
 #[derive(Parser, Debug, Clone)]
@@ -182,8 +183,10 @@ fn start_tui<B: Backend>(
                             }
                             true => match key.code {
                                 KeyCode::Char('t') => {
-                                    webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
+                                    if Browser::is_available() {
+                                        webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
                                     .unwrap_or_default();
+                                    }
                                 }
                                 KeyCode::Char('r') => {
                                     exit_type = ExitType::Restart;

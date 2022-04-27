@@ -6,6 +6,7 @@ use tui::{
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
+use webbrowser::Browser;
 
 use crate::thok::{Outcome, Thok};
 
@@ -184,7 +185,11 @@ impl Widget for &Thok {
                 stats.render(chunks[1], buf);
 
                 let legend = Paragraph::new(Span::styled(
-                    String::from("(r)etry / (n)ew / (t)weet / (esc)ape"),
+                    String::from(if Browser::is_available() {
+                        "(r)etry / (n)ew / (t)weet / (esc)ape"
+                    } else {
+                        "(r)etry / (n)ew / (esc)ape"
+                    }),
                     italic_style,
                 ));
 
