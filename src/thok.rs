@@ -1,5 +1,8 @@
 use crate::util::std_dev;
+use chrono::prelude::*;
 use itertools::Itertools;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -66,6 +69,33 @@ impl Thok {
         if self.cursor_pos > 0 {
             self.cursor_pos -= 1;
         }
+    }
+
+    pub fn save_results(&self) -> io::Result<()> {
+        let log_path = dirs::data_dir().unwrap().join("thokr.log");
+        // If the config file doesn't exist, we need to emit a header
+        let needs_header = !log_path.exists();
+
+        let mut log_file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(log_path)?;
+
+        if needs_header {
+            writeln!(log_file, "# Date, WPM, Accuracy, Standard Deviation")?;
+        }
+
+        writeln!(
+            log_file,
+            "{}, {}, {}, {}",
+            Utc::now(),
+            self.wpm,
+            self.accuracy,
+            self.std_dev
+        )?;
+
+        Ok(())
     }
 
     pub fn calc_results(&mut self) {
@@ -141,6 +171,8 @@ impl Thok {
             self.wpm = 0.0;
         }
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
+
+        let _ = self.save_results();
     }
 
     pub fn backspace(&mut self) {
