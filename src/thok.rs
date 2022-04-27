@@ -89,7 +89,7 @@ impl Thok {
         writeln!(
             log_file,
             "{}, {}, {}, {}",
-            Utc::now(),
+            Local::now(),
             self.wpm,
             self.accuracy,
             self.std_dev
