@@ -76,7 +76,16 @@ impl Thok {
     }
 
     pub fn save_results(&self) -> io::Result<()> {
-        let log_path = dirs::data_dir().unwrap().join("thokr.log");
+        let project_dir = directories::ProjectDirs::from("", "", "thokr").unwrap();
+        let config_dir = project_dir.config_dir();
+        let log_path = config_dir.join("log.csv");
+        dbg!(&log_path);
+
+        // Make sure the directory exists. There's no reason to check if it exists before doing
+        // this, as this std::fs does that anyways.
+        std::fs::create_dir_all(config_dir)?;
+
+        // let log_path = dirs::data_dir().unwrap().join("thokr/log.csv");
         // If the config file doesn't exist, we need to emit a header
         let needs_header = !log_path.exists();
 
