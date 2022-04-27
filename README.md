@@ -4,10 +4,11 @@
 <p align="center" style="font-size: 1.2rem;">a sleek typing tui written in rust</p>
 <hr >
 
-[![License](https://img.shields.io/badge/License-MIT-default.svg)](.github/LICENSE.md)
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
 [![GitHub Docker Workflow](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml)
-[![GitHub Issues](https://img.shields.io/github/issues/coloradocolby/thokr)](https://github.com/coloradocolby/thokr/issues)
+[![License](https://img.shields.io/badge/License-MIT-default.svg)](.github/LICENSE.md)
+![Version](https://img.shields.io/crates/v/thokr)
+![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)
 
 ![demo](./assets/demo.gif)
 
@@ -56,9 +57,10 @@ The following languages are available by default:
 
 - [ ] ⚡️ Performance
   - Right now there are known performance issues surrounding the rendering of
-    the tui at each tick interval and/or key press. Ideally each render could
-    use the last render to make only minor adjustments (possibly using
-    [StatefulWidget](https://docs.rs/tui/0.10.0/tui/widgets/trait.StatefulWidget.html),
+    the tui at each tick interval and/or key press. Ideally each render uses the
+    prior render as a base and only makes the necessary adjustments (possibly
+    using
+    [StatefulWidget](https://docs.rs/tui/0.10.0/tui/widgets/trait.StatefulWidget.html)),
     but I haven't been able to figure that out yet.
 - [ ] 🔠 Multi-language support
   - I decided not to launch thokr with languages besides english because of some
@@ -94,7 +96,8 @@ list of proposed features (and known issues).
 
 ## License
 
-Distributed under the MIT License. See [LICENSE.md](.github/LICENSE.md) for more information.
+Distributed under the MIT License. See [LICENSE.md](.github/LICENSE.md) for more
+information.
 
 ## Acknowledgments
 
