@@ -7,8 +7,8 @@
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
 [![GitHub Docker Workflow](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](.github/LICENSE.md)
-![Version](https://img.shields.io/crates/v/thokr)
-![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)
+[![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
+[![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)](https://github.com/coloradocolby/thokr/stargazers)
 
 ![demo](./assets/demo.gif)
 
