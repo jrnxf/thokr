@@ -27,7 +27,10 @@ pub struct Thok {
     pub wpm_coords: Vec<(f64, f64)>,
     pub cursor_pos: usize,
     pub started_at: Option<SystemTime>,
-    pub duration: Option<f64>,
+    // How much time is left
+    pub time_remaining: Option<f64>,
+    // The duration of the test
+    pub test_duration: Option<f64>,
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
@@ -44,7 +47,8 @@ impl Thok {
             wpm_coords: vec![],
             cursor_pos: 0,
             started_at: None,
-            duration,
+            time_remaining: duration,
+            test_duration: duration,
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
@@ -52,7 +56,7 @@ impl Thok {
     }
 
     pub fn on_tick(&mut self) {
-        self.duration = Some(self.duration.unwrap() - 0.1);
+        self.time_remaining = Some(self.time_remaining.unwrap() - 0.1);
     }
 
     pub fn get_expected_char(&self, idx: usize) -> char {
@@ -83,16 +87,25 @@ impl Thok {
             .open(log_path)?;
 
         if needs_header {
-            writeln!(log_file, "# Date, WPM, Accuracy, Standard Deviation")?;
+            writeln!(
+                log_file,
+                "time, wpm, accuracy, standard deviation, words, duration"
+            )?;
         }
 
         writeln!(
             log_file,
-            "{}, {}, {}, {}",
+            "{},{},{},{},{},{}",
             Local::now(),
             self.wpm,
             self.accuracy,
-            self.std_dev
+            self.std_dev,
+            // The number of words in the prompt
+            // TODO: it may be best to pre-calculate this, but it's not super important'
+            //       as the prompt will likely be replaced on the next test
+            self.prompt.split_whitespace().count(),
+            // Don't log anything if duration is None. Log the float otherwise
+            self.test_duration.map_or(String::new(), |f| f.to_string())
         )?;
 
         Ok(())
@@ -215,6 +228,6 @@ impl Thok {
 
     pub fn has_finished(&self) -> bool {
         (self.input.len() == self.prompt.len())
-            || (self.duration.is_some() && self.duration.unwrap() <= 0.0)
+            || (self.time_remaining.is_some() && self.time_remaining.unwrap() <= 0.0)
     }
 }
