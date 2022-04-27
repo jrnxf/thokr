@@ -6,7 +6,7 @@ mod util;
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEvent},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     tty::IsTty,
@@ -129,7 +129,10 @@ fn start_tui<B: Backend>(
     mut app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
     let cli = app.cli.clone();
-    let events = get_events(cli.unwrap().number_of_secs.unwrap_or(0) > 0);
+
+    let should_tick = cli.unwrap().number_of_secs.unwrap_or(0) > 0;
+
+    let thok_events = get_thok_events(should_tick);
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
@@ -138,8 +141,8 @@ fn start_tui<B: Backend>(
         loop {
             let app = &mut app;
 
-            match events.recv()? {
-                Events::Tick => {
+            match thok_events.recv()? {
+                ThokEvent::Tick => {
                     if app.thok.has_started() && !app.thok.has_finished() {
                         app.thok.on_tick();
 
@@ -149,8 +152,11 @@ fn start_tui<B: Backend>(
                         terminal.draw(|f| ui(f, app))?;
                     }
                 }
-                Events::Input(key) => {
-                    match key {
+                ThokEvent::Resize => {
+                    terminal.draw(|f| ui(f, app))?;
+                }
+                ThokEvent::Key(key) => {
+                    match key.code {
                         KeyCode::Esc => {
                             break;
                         }
@@ -174,10 +180,10 @@ fn start_tui<B: Backend>(
                                     app.thok.calc_results();
                                 }
                             }
-                            true => match key {
+                            true => match key.code {
                                 KeyCode::Char('t') => {
                                     webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
-                                .unwrap_or_default();
+                                    .unwrap_or_default();
                                 }
                                 KeyCode::Char('r') => {
                                     exit_type = ExitType::Restart;
@@ -214,25 +220,32 @@ fn start_tui<B: Backend>(
 }
 
 #[derive(Clone)]
-enum Events {
-    Input(KeyCode),
+enum ThokEvent {
+    Key(KeyEvent),
+    Resize,
     Tick,
 }
 
-fn get_events(should_tick: bool) -> mpsc::Receiver<Events> {
+fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     let (tx, rx) = mpsc::channel();
 
     if should_tick {
         let tick_x = tx.clone();
         thread::spawn(move || loop {
-            tick_x.send(Events::Tick).unwrap();
+            tick_x.send(ThokEvent::Tick).unwrap();
             thread::sleep(Duration::from_millis(100))
         });
     }
 
     thread::spawn(move || loop {
-        if let Event::Key(key) = event::read().unwrap() {
-            tx.send(Events::Input(key.code)).unwrap();
+        match event::read().unwrap() {
+            Event::Key(key) => {
+                tx.send(ThokEvent::Key(key)).unwrap();
+            }
+            Event::Resize(_, _) => {
+                tx.send(ThokEvent::Resize).unwrap();
+            }
+            _ => {}
         }
     });
 

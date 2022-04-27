@@ -9,7 +9,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::thok::{Outcome, Thok};
 
-const HORIZONTAL_MARGIN: u16 = 10;
+const HORIZONTAL_MARGIN: u16 = 5;
+const VERTICAL_MARGIN: u16 = 2;
 
 impl Widget for &Thok {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -36,7 +37,8 @@ impl Widget for &Thok {
                 let max_chars_per_line = area.width - (HORIZONTAL_MARGIN * 2);
                 let mut prompt_occupied_lines =
                     ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
-                let time_left_lines = 2;
+
+                let time_left_lines = if self.duration.is_some() { 2 } else { 0 };
 
                 if self.prompt.width() <= max_chars_per_line as usize {
                     prompt_occupied_lines = 1;
@@ -85,12 +87,15 @@ impl Widget for &Thok {
                     dim_bold_style,
                 ));
 
-                let widget = match prompt_occupied_lines {
-                    1 => Paragraph::new(Spans::from(spans))
-                        .alignment(Alignment::Center)
-                        .wrap(Wrap { trim: true }),
-                    _ => Paragraph::new(Spans::from(spans)).wrap(Wrap { trim: true }),
-                };
+                let widget = Paragraph::new(Spans::from(spans))
+                    .alignment(if prompt_occupied_lines == 1 {
+                        // when the prompt is small enough to fit on one line
+                        // centering the text gives a nice zen feeling
+                        Alignment::Center
+                    } else {
+                        Alignment::Left
+                    })
+                    .wrap(Wrap { trim: true });
 
                 widget.render(chunks[2], buf);
 
@@ -107,11 +112,11 @@ impl Widget for &Thok {
             false => {
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .horizontal_margin(10)
-                    .vertical_margin(5)
+                    .horizontal_margin(HORIZONTAL_MARGIN)
+                    .vertical_margin(VERTICAL_MARGIN)
                     .constraints(
                         [
-                            Constraint::Percentage(90),
+                            Constraint::Min(1),
                             Constraint::Length(1),
                             Constraint::Length(1), // for padding
                             Constraint::Length(1),
