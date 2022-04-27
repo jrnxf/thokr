@@ -85,7 +85,6 @@ impl Thok {
         // this, as this std::fs does that anyways.
         std::fs::create_dir_all(config_dir)?;
 
-        // let log_path = dirs::data_dir().unwrap().join("thokr/log.csv");
         // If the config file doesn't exist, we need to emit a header
         let needs_header = !log_path.exists();
 
