@@ -24,6 +24,8 @@ use tui::{
 };
 use webbrowser::Browser;
 
+const TICK_RATE: u64 = 100;
+
 /// a sleek typing tui written in rust
 #[derive(Parser, Debug, Clone)]
 #[clap(version, about, long_about= None)]
@@ -137,7 +139,7 @@ fn start_tui<B: Backend>(
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
-        terminal.draw(|f| ui(f, app))?;
+        terminal.draw(|f| ui(app, f))?;
 
         loop {
             let app = &mut app;
@@ -150,11 +152,11 @@ fn start_tui<B: Backend>(
                         if app.thok.has_finished() {
                             app.thok.calc_results();
                         }
-                        terminal.draw(|f| ui(f, app))?;
+                        terminal.draw(|f| ui(app, f))?;
                     }
                 }
                 ThokEvent::Resize => {
-                    terminal.draw(|f| ui(f, app))?;
+                    terminal.draw(|f| ui(app, f))?;
                 }
                 ThokEvent::Key(key) => {
                     match key.code {
@@ -201,7 +203,7 @@ fn start_tui<B: Backend>(
                         },
                         _ => {}
                     }
-                    terminal.draw(|f| ui(f, app))?;
+                    terminal.draw(|f| ui(app, f))?;
                 }
             }
         }
@@ -239,29 +241,25 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
                 break;
             }
 
-            thread::sleep(Duration::from_millis(100))
+            thread::sleep(Duration::from_millis(TICK_RATE))
         });
     }
 
     thread::spawn(move || loop {
-        match event::read().unwrap() {
-            Event::Key(key) => {
-                if tx.send(ThokEvent::Key(key)).is_err() {
-                    break;
-                }
-            }
-            Event::Resize(_, _) => {
-                if tx.send(ThokEvent::Resize).is_err() {
-                    break;
-                }
-            }
-            _ => {}
+        let evt = match event::read().unwrap() {
+            Event::Key(key) => Some(ThokEvent::Key(key)),
+            Event::Resize(_, _) => Some(ThokEvent::Resize),
+            _ => None,
+        };
+
+        if evt.is_some() && tx.send(evt.unwrap()).is_err() {
+            break;
         }
     });
 
     rx
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
+fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>) {
     f.render_widget(&app.thok, f.size());
 }
