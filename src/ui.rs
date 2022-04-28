@@ -39,7 +39,7 @@ impl Widget for &Thok {
                 let mut prompt_occupied_lines =
                     ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
 
-                let time_left_lines = if self.duration.is_some() { 2 } else { 0 };
+                let time_left_lines = if self.test_duration.is_some() { 2 } else { 0 };
 
                 if self.prompt.width() <= max_chars_per_line as usize {
                     prompt_occupied_lines = 1;
