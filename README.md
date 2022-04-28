@@ -26,6 +26,16 @@ $ cargo install thokr
 $ docker run -it coloradocolby/thokr
 ```
 
+## Arch Linux
+
+On Arch Linux, you can install it from AUR:
+
+``` sh
+paru -S thokr-git
+```
+
+
+
 ## Usage
 
 For detailed usage run `thokr -h`.
