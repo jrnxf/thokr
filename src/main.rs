@@ -235,7 +235,10 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     if should_tick {
         let tick_x = tx.clone();
         thread::spawn(move || loop {
-            tick_x.send(ThokEvent::Tick).unwrap();
+            if tick_x.send(ThokEvent::Tick).is_err() {
+                break;
+            }
+
             thread::sleep(Duration::from_millis(100))
         });
     }
@@ -243,10 +246,14 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     thread::spawn(move || loop {
         match event::read().unwrap() {
             Event::Key(key) => {
-                tx.send(ThokEvent::Key(key)).unwrap();
+                if tx.send(ThokEvent::Key(key)).is_err() {
+                    break;
+                }
             }
             Event::Resize(_, _) => {
-                tx.send(ThokEvent::Resize).unwrap();
+                if tx.send(ThokEvent::Resize).is_err() {
+                    break;
+                }
             }
             _ => {}
         }
