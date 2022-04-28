@@ -100,9 +100,9 @@ impl Widget for &Thok {
 
                 widget.render(chunks[2], buf);
 
-                if self.duration.is_some() {
+                if self.time_remaining.is_some() {
                     let timer = Paragraph::new(Span::styled(
-                        format!("{:.1}", self.duration.unwrap()),
+                        format!("{:.1}", self.time_remaining.unwrap()),
                         dim_bold_style,
                     ))
                     .alignment(Alignment::Center);
@@ -142,7 +142,7 @@ impl Widget for &Thok {
 
                 let mut overall_duration = match self.wpm_coords.last() {
                     Some(x) => x.0,
-                    _ => self.duration.unwrap_or(1.0),
+                    _ => self.time_remaining.unwrap_or(1.0),
                 };
 
                 overall_duration = if overall_duration < 1.0 {

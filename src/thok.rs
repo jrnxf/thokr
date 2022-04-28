@@ -1,5 +1,8 @@
 use crate::util::std_dev;
+use chrono::prelude::*;
 use itertools::Itertools;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
 
 #[derive(Clone, Debug, Copy, PartialEq)]
@@ -24,7 +27,10 @@ pub struct Thok {
     pub wpm_coords: Vec<(f64, f64)>,
     pub cursor_pos: usize,
     pub started_at: Option<SystemTime>,
-    pub duration: Option<f64>,
+    // How much time is left
+    pub time_remaining: Option<f64>,
+    // The duration of the test
+    pub test_duration: Option<f64>,
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
@@ -41,7 +47,8 @@ impl Thok {
             wpm_coords: vec![],
             cursor_pos: 0,
             started_at: None,
-            duration,
+            time_remaining: duration,
+            test_duration: duration,
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
@@ -49,7 +56,7 @@ impl Thok {
     }
 
     pub fn on_tick(&mut self) {
-        self.duration = Some(self.duration.unwrap() - 0.1);
+        self.time_remaining = Some(self.time_remaining.unwrap() - 0.1);
     }
 
     pub fn get_expected_char(&self, idx: usize) -> char {
@@ -66,6 +73,50 @@ impl Thok {
         if self.cursor_pos > 0 {
             self.cursor_pos -= 1;
         }
+    }
+
+    pub fn save_results(&self) -> io::Result<()> {
+        let project_dir = directories::ProjectDirs::from("", "", "thokr").unwrap();
+        let config_dir = project_dir.config_dir();
+        let log_path = config_dir.join("log.csv");
+        dbg!(&log_path);
+
+        // Make sure the directory exists. There's no reason to check if it exists before doing
+        // this, as this std::fs does that anyways.
+        std::fs::create_dir_all(config_dir)?;
+
+        // If the config file doesn't exist, we need to emit a header
+        let needs_header = !log_path.exists();
+
+        let mut log_file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(log_path)?;
+
+        if needs_header {
+            writeln!(
+                log_file,
+                "time, wpm, accuracy, standard deviation, words, duration"
+            )?;
+        }
+
+        writeln!(
+            log_file,
+            "{},{},{},{},{},{}",
+            Local::now(),
+            self.wpm,
+            self.accuracy,
+            self.std_dev,
+            // The number of words in the prompt
+            // TODO: it may be best to pre-calculate this, but it's not super important'
+            //       as the prompt will likely be replaced on the next test
+            self.prompt.split_whitespace().count(),
+            // Don't log anything if duration is None. Log the float otherwise
+            self.test_duration.map_or(String::new(), |f| f.to_string())
+        )?;
+
+        Ok(())
     }
 
     pub fn calc_results(&mut self) {
@@ -141,6 +192,8 @@ impl Thok {
             self.wpm = 0.0;
         }
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
+
+        let _ = self.save_results();
     }
 
     pub fn backspace(&mut self) {
@@ -183,6 +236,6 @@ impl Thok {
 
     pub fn has_finished(&self) -> bool {
         (self.input.len() == self.prompt.len())
-            || (self.duration.is_some() && self.duration.unwrap() <= 0.0)
+            || (self.time_remaining.is_some() && self.time_remaining.unwrap() <= 0.0)
     }
 }
