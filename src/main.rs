@@ -24,7 +24,7 @@ use tui::{
 };
 use webbrowser::Browser;
 
-const TICK_RATE: u64 = 100;
+const TICK_RATE_MS: u64 = 100;
 
 /// a sleek typing tui written in rust
 #[derive(Parser, Debug, Clone)]
@@ -75,9 +75,12 @@ impl App {
 
             language.get_random(cli.number_of_words).join(" ")
         };
-
         Self {
-            thok: Thok::new(prompt, cli.number_of_secs),
+            thok: Thok::new(
+                prompt,
+                cli.number_of_words,
+                cli.number_of_secs.map(|ns| ns as f64),
+            ),
             cli: Some(cli),
         }
     }
@@ -93,7 +96,11 @@ impl App {
             }
         };
 
-        self.thok = Thok::new(prompt, cli.number_of_secs);
+        self.thok = Thok::new(
+            prompt,
+            cli.number_of_words,
+            cli.number_of_secs.map(|ns| ns as f64),
+        );
     }
 }
 
@@ -241,7 +248,7 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
                 break;
             }
 
-            thread::sleep(Duration::from_millis(TICK_RATE))
+            thread::sleep(Duration::from_millis(TICK_RATE_MS))
         });
     }
 

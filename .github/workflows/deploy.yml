@@ -1,11 +1,11 @@
-name: docker
+name: deploy
 
 on:
   release:
     types: [published]
 
 jobs:
-  push_to_registry:
+  docker:
     name: push docker image to docker hub
     runs-on: ubuntu-latest
     steps:
@@ -30,3 +30,17 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  crates:
+    name: publish crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/cargo@v1
+        name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        with:
+          command: publish
+          args: --no-verify

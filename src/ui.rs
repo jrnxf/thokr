@@ -39,7 +39,7 @@ impl Widget for &Thok {
                 let mut prompt_occupied_lines =
                     ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
 
-                let time_left_lines = if self.test_duration.is_some() { 2 } else { 0 };
+                let time_left_lines = if self.number_of_secs.is_some() { 2 } else { 0 };
 
                 if self.prompt.width() <= max_chars_per_line as usize {
                     prompt_occupied_lines = 1;
@@ -100,9 +100,9 @@ impl Widget for &Thok {
 
                 widget.render(chunks[2], buf);
 
-                if self.time_remaining.is_some() {
+                if self.seconds_remaining.is_some() {
                     let timer = Paragraph::new(Span::styled(
-                        format!("{:.1}", self.time_remaining.unwrap()),
+                        format!("{:.1}", self.seconds_remaining.unwrap()),
                         dim_bold_style,
                     ))
                     .alignment(Alignment::Center);
@@ -142,7 +142,7 @@ impl Widget for &Thok {
 
                 let mut overall_duration = match self.wpm_coords.last() {
                     Some(x) => x.0,
-                    _ => self.time_remaining.unwrap_or(1.0),
+                    _ => self.seconds_remaining.unwrap_or(1.0),
                 };
 
                 overall_duration = if overall_duration < 1.0 {

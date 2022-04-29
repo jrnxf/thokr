@@ -5,7 +5,7 @@
 <hr >
 
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
-[![GitHub Docker Workflow](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/docker.yml)
+[![GitHub Deploy Workflow](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](.github/LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
 [![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)](https://github.com/coloradocolby/thokr/stargazers)
@@ -26,15 +26,9 @@ $ cargo install thokr
 $ docker run -it coloradocolby/thokr
 ```
 
-## Arch Linux
+### Arch Linux
 
-On Arch Linux, you can install it from AUR:
-
-``` sh
-paru -S thokr-git
-```
-
-
+Install `thokr-git` from the AUR
 
 ## Usage
 
@@ -50,7 +44,7 @@ For detailed usage run `thokr -h`.
 | `thokr -w 10 -s 5`          | 10 of the 200 most common English words (hard stop at 5 seconds) |
 | `thokr -p "$(cat foo.txt)"` |                   custom prompt with the output of `cat foo.txt` |
 
-_During a test, you can press ← to start over or → to see a new prompt (assuming
+_During a test you can press ← to start over or → to see a new prompt (assuming
 you didn't supply a custom one)_
 
 ## Supported Languages
@@ -62,6 +56,18 @@ The following languages are available by default:
 | `english`    |   200 most common English words |
 | `english1k`  |  1000 most common English words |
 | `english10k` | 10000 most common English words |
+
+## Logging
+
+Upon completion of a test, a row outlining your results is appended to the
+`log.csv` file found in the following platform-specific folders. This way you
+can easily track your progress over time.
+
+| platform | value                                                            |                                        example |
+| :------- | ---------------------------------------------------------------- | ---------------------------------------------: |
+| Linux    | $XDG*CONFIG_HOME/\_project_path* or $HOME/.config/_project_path_ |                      /home/colby/.config/thokr |
+| macOS    | $HOME/Library/Application Support/_project_path_                 | /Users/Colby/Library/Application Support/thokr |
+| Windows  | {FOLDERID*RoamingAppData}\_project_path*\config                  |    C:\Users\Colby\AppData\Roaming\thokr\config |
 
 ## Roadmap
 

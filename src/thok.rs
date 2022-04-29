@@ -1,5 +1,7 @@
 use crate::util::std_dev;
+use crate::TICK_RATE_MS;
 use chrono::prelude::*;
+use directories::ProjectDirs;
 use itertools::Itertools;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -27,28 +29,26 @@ pub struct Thok {
     pub wpm_coords: Vec<(f64, f64)>,
     pub cursor_pos: usize,
     pub started_at: Option<SystemTime>,
-    // How much time is left
-    pub time_remaining: Option<f64>,
-    // The duration of the test
-    pub test_duration: Option<f64>,
+    pub seconds_remaining: Option<f64>,
+    pub number_of_secs: Option<f64>,
+    pub number_of_words: usize,
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
 }
 
 impl Thok {
-    pub fn new(prompt_string: String, duration: Option<usize>) -> Self {
-        let duration = duration.map(|d| d as f64);
-
+    pub fn new(prompt: String, number_of_words: usize, number_of_secs: Option<f64>) -> Self {
         Self {
-            prompt: prompt_string,
+            prompt,
             input: vec![],
             raw_coords: vec![],
             wpm_coords: vec![],
             cursor_pos: 0,
             started_at: None,
-            time_remaining: duration,
-            test_duration: duration,
+            number_of_secs,
+            number_of_words,
+            seconds_remaining: number_of_secs,
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
@@ -56,7 +56,8 @@ impl Thok {
     }
 
     pub fn on_tick(&mut self) {
-        self.time_remaining = Some(self.time_remaining.unwrap() - 0.1);
+        self.seconds_remaining =
+            Some(self.seconds_remaining.unwrap() - (TICK_RATE_MS as f64 / 1000_f64));
     }
 
     pub fn get_expected_char(&self, idx: usize) -> char {
@@ -75,53 +76,7 @@ impl Thok {
         }
     }
 
-    pub fn save_results(&self) -> io::Result<()> {
-        let project_dir = directories::ProjectDirs::from("", "", "thokr").unwrap();
-        let config_dir = project_dir.config_dir();
-        let log_path = config_dir.join("log.csv");
-        dbg!(&log_path);
-
-        // Make sure the directory exists. There's no reason to check if it exists before doing
-        // this, as this std::fs does that anyways.
-        std::fs::create_dir_all(config_dir)?;
-
-        // If the config file doesn't exist, we need to emit a header
-        let needs_header = !log_path.exists();
-
-        let mut log_file = OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(log_path)?;
-
-        if needs_header {
-            writeln!(
-                log_file,
-                "time, wpm, accuracy, standard deviation, words, duration"
-            )?;
-        }
-
-        writeln!(
-            log_file,
-            "{},{},{},{},{},{}",
-            Local::now(),
-            self.wpm,
-            self.accuracy,
-            self.std_dev,
-            // The number of words in the prompt
-            // TODO: it may be best to pre-calculate this, but it's not super important'
-            //       as the prompt will likely be replaced on the next test
-            self.prompt.split_whitespace().count(),
-            // Don't log anything if duration is None. Log the float otherwise
-            self.test_duration.map_or(String::new(), |f| f.to_string())
-        )?;
-
-        Ok(())
-    }
-
     pub fn calc_results(&mut self) {
-        let elapsed = self.started_at.unwrap().elapsed();
-
         let correct_chars = self
             .input
             .clone()
@@ -129,9 +84,9 @@ impl Thok {
             .filter(|i| i.outcome == Outcome::Correct)
             .collect::<Vec<Input>>();
 
-        let total_time = elapsed.unwrap().as_millis() as f64 / 1000.0;
+        let elapsed_secs = self.started_at.unwrap().elapsed().unwrap().as_millis() as f64;
 
-        let whole_second_limit = total_time.floor();
+        let whole_second_limit = elapsed_secs.floor();
 
         let correct_chars_per_sec: Vec<(f64, f64)> = correct_chars
             .clone()
@@ -141,8 +96,7 @@ impl Thok {
                     .timestamp
                     .duration_since(self.started_at.unwrap())
                     .unwrap()
-                    .as_millis() as f64
-                    / 1000.0;
+                    .as_secs_f64();
 
                 if num_secs == 0.0 {
                     num_secs = 1.;
@@ -154,7 +108,7 @@ impl Thok {
                         num_secs = num_secs.ceil()
                     }
                 } else {
-                    num_secs = total_time;
+                    num_secs = elapsed_secs;
                 }
 
                 *map.entry(num_secs.to_string()).or_insert(0) += 1;
@@ -236,6 +190,48 @@ impl Thok {
 
     pub fn has_finished(&self) -> bool {
         (self.input.len() == self.prompt.len())
-            || (self.time_remaining.is_some() && self.time_remaining.unwrap() <= 0.0)
+            || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
+    }
+
+    pub fn save_results(&self) -> io::Result<()> {
+        if let Some(proj_dirs) = ProjectDirs::from("", "", "thokr") {
+            let config_dir = proj_dirs.config_dir();
+            let log_path = config_dir.join("log.csv");
+
+            std::fs::create_dir_all(config_dir)?;
+
+            // If the config file doesn't exist, we need to emit a header
+            let needs_header = !log_path.exists();
+
+            let mut log_file = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .create(true)
+                .open(log_path)?;
+
+            if needs_header {
+                writeln!(
+                    log_file,
+                    "date,num_words,num_secs,elapsed_secs,wpm,accuracy,std_dev"
+                )?;
+            }
+
+            let elapsed_secs = self.started_at.unwrap().elapsed().unwrap().as_secs_f64();
+
+            writeln!(
+                log_file,
+                "{},{},{},{:.2},{},{},{:.2}",
+                Local::now().format("%c"),
+                self.number_of_words,
+                self.number_of_secs
+                    .map_or(String::from(""), |ns| format!("{:.2}", ns)),
+                elapsed_secs,
+                self.wpm,      // already rounded, no need to round to two decimal places
+                self.accuracy, // already rounded, no need to round to two decimal places
+                self.std_dev,
+            )?;
+        }
+
+        Ok(())
     }
 }

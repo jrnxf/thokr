@@ -1,7 +1,7 @@
 [package]
 name = "thokr"
 description = "a sleek typing tui written in rust"
-version = "0.1.2"
+version = "0.2.0"
 readme = "README.md"
 repository = "https://github.com/coloradocolby/thokr.git"
 homepage = "https://github.com/coloradocolby/thokr"
