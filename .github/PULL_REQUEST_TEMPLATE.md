@@ -31,9 +31,10 @@ merge of your pull request!
 
 <!-- to check an item, place an "x" in the box like so: "- [x] Documentation" -->
 
-- [x] Documentation added
+- [ ] `Allow edits from maintainers` option checked
+- [ ] Documentation added
 - [ ] Tests added
-- [ ] No linting errors / broken tests
+- [ ] No failing actions
 - [ ] Merge ready
       <!-- In your opinion, is this ready to be merged as soon as it's reviewed? -->
 
