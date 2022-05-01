@@ -10,7 +10,7 @@ use webbrowser::Browser;
 
 use crate::thok::{Outcome, Thok};
 
-const HORIZONTAL_MARGIN: u16 = 5;
+pub const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
 
 impl Widget for &Thok {
@@ -40,11 +40,9 @@ impl Widget for &Thok {
                     ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
 
                 let time_left_lines = if self.number_of_secs.is_some() { 2 } else { 0 };
-
                 if self.prompt.width() <= max_chars_per_line as usize {
                     prompt_occupied_lines = 1;
                 }
-
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .horizontal_margin(HORIZONTAL_MARGIN)
@@ -54,7 +52,7 @@ impl Widget for &Thok {
                                 ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
                             ),
                             Constraint::Length(time_left_lines),
-                            Constraint::Length(prompt_occupied_lines),
+                            Constraint::Length(3),
                             Constraint::Length(
                                 ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
                             ),
@@ -62,14 +60,14 @@ impl Widget for &Thok {
                         .as_ref(),
                     )
                     .split(area);
-
                 let mut spans = self
                     .input
                     .iter()
+                    .skip(self.skip)
                     .enumerate()
                     .map(|(idx, input)| {
                         Span::styled(
-                            self.get_expected_char(idx).to_string(),
+                            self.get_expected_char(self.skip + idx).to_string(),
                             match input.outcome {
                                 Outcome::Correct => green_bold_style,
                                 Outcome::Incorrect => red_bold_style,

@@ -22,6 +22,7 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     Frame, Terminal,
 };
+use ui::HORIZONTAL_MARGIN;
 use webbrowser::Browser;
 
 const TICK_RATE_MS: u64 = 100;
@@ -31,7 +32,7 @@ const TICK_RATE_MS: u64 = 100;
 #[clap(version, about, long_about= None)]
 pub struct Cli {
     /// number of words to use in test
-    #[clap(short = 'w', long, default_value_t = 15)]
+    #[clap(short = 'w', long, default_value_t = 2000)]
     number_of_words: usize,
 
     /// number of seconds to run test
@@ -146,8 +147,7 @@ fn start_tui<B: Backend>(
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
-        terminal.draw(|f| ui(app, f))?;
-
+        terminal.draw(|f| ui(app, f, false))?;
         loop {
             let app = &mut app;
 
@@ -159,13 +159,14 @@ fn start_tui<B: Backend>(
                         if app.thok.has_finished() {
                             app.thok.calc_results();
                         }
-                        terminal.draw(|f| ui(app, f))?;
+                        terminal.draw(|f| ui(app, f, false))?;
                     }
                 }
                 ThokEvent::Resize => {
-                    terminal.draw(|f| ui(app, f))?;
+                    terminal.draw(|f| ui(app, f, false))?;
                 }
                 ThokEvent::Key(key) => {
+                    let mut is_space = false;
                     match key.code {
                         KeyCode::Esc => {
                             break;
@@ -185,6 +186,9 @@ fn start_tui<B: Backend>(
                         }
                         KeyCode::Char(c) => match app.thok.has_finished() {
                             false => {
+                                if c == ' ' {
+                                    is_space = true;
+                                }
                                 app.thok.write(c);
                                 if app.thok.has_finished() {
                                     app.thok.calc_results();
@@ -210,7 +214,7 @@ fn start_tui<B: Backend>(
                         },
                         _ => {}
                     }
-                    terminal.draw(|f| ui(app, f))?;
+                    terminal.draw(|f| ui(app, f, is_space))?;
                 }
             }
         }
@@ -267,6 +271,10 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     rx
 }
 
-fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>) {
+fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>, is_space: bool) {
+    if is_space {
+        app.thok
+            .get_skip_count((f.size().width - HORIZONTAL_MARGIN * 2).into());
+    }
     f.render_widget(&app.thok, f.size());
 }
