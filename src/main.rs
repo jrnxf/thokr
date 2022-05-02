@@ -88,15 +88,10 @@ impl App {
         };
         if cli.number_of_sentences.is_some() {
             Self {
-                thok: Thok::new(
-                    prompt,
-                    count,
-                    cli.number_of_secs.map(|ns| ns as f64),
-                ),
+                thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
                 cli: Some(cli),
             }
-        }
-        else {
+        } else {
             Self {
                 thok: Thok::new(
                     prompt,
@@ -127,14 +122,9 @@ impl App {
                 }
             },
         };
-        if cli.number_of_sentences.is_some(){
-            self.thok = Thok::new(
-                prompt,
-                count,
-                cli.number_of_secs.map(|ns| ns as f64),
-            );
-        }
-        else {
+        if cli.number_of_sentences.is_some() {
+            self.thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
+        } else {
             self.thok = Thok::new(
                 prompt,
                 cli.number_of_words,
