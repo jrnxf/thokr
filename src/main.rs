@@ -6,7 +6,7 @@ mod util;
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     tty::IsTty,
@@ -183,31 +183,40 @@ fn start_tui<B: Backend>(
                             exit_type = ExitType::New;
                             break;
                         }
-                        KeyCode::Char(c) => match app.thok.has_finished() {
-                            false => {
-                                app.thok.write(c);
-                                if app.thok.has_finished() {
-                                    app.thok.calc_results();
-                                }
+                        KeyCode::Char(c) => {
+                            if key.modifiers.contains(KeyModifiers::CONTROL)
+                                && key.code == KeyCode::Char('c')
+                            // ctrl+c to quit
+                            {
+                                break;
                             }
-                            true => match key.code {
-                                KeyCode::Char('t') => {
-                                    if Browser::is_available() {
-                                        webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
-                                    .unwrap_or_default();
+
+                            match app.thok.has_finished() {
+                                false => {
+                                    app.thok.write(c);
+                                    if app.thok.has_finished() {
+                                        app.thok.calc_results();
                                     }
                                 }
-                                KeyCode::Char('r') => {
-                                    exit_type = ExitType::Restart;
-                                    break;
-                                }
-                                KeyCode::Char('n') => {
-                                    exit_type = ExitType::New;
-                                    break;
-                                }
-                                _ => {}
-                            },
-                        },
+                                true => match key.code {
+                                    KeyCode::Char('t') => {
+                                        if Browser::is_available() {
+                                            webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fcoloradocolby%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
+                                    .unwrap_or_default();
+                                        }
+                                    }
+                                    KeyCode::Char('r') => {
+                                        exit_type = ExitType::Restart;
+                                        break;
+                                    }
+                                    KeyCode::Char('n') => {
+                                        exit_type = ExitType::New;
+                                        break;
+                                    }
+                                    _ => {}
+                                },
+                            }
+                        }
                         _ => {}
                     }
                     terminal.draw(|f| ui(app, f))?;
