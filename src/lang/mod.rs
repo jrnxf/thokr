@@ -26,8 +26,8 @@ impl Language {
         let rng = &mut rand::thread_rng();
         let mut vec = Vec::new();
         let mut word_count = 0;
-        for _ in 0..num {
-            let s = cgisf(
+        for i in 0..num {
+            let mut s = cgisf(
                 rng.gen_range(1..3),
                 rng.gen_range(1..3),
                 rng.gen_range(1..5),
@@ -37,6 +37,9 @@ impl Language {
             );
             word_count += &s.matches(' ').count();
             // gets the word count of the sentence.
+            if i == num - 1 {
+                s.pop();
+            }
             vec.push(s);
         }
         (vec, word_count)
