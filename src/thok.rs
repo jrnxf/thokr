@@ -3,6 +3,7 @@ use crate::TICK_RATE_MS;
 use chrono::prelude::*;
 use directories::ProjectDirs;
 use itertools::{any, Itertools};
+use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
@@ -35,13 +36,13 @@ pub struct Thok {
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
-    pub skip: usize,
-    pub line: usize,
+    pub line_lengths: VecDeque<usize>,
+    pub total_line_length: usize,
+    pub skip_curr: usize,
 }
 
 impl Thok {
     pub fn new(prompt: String, number_of_words: usize, number_of_secs: Option<f64>) -> Self {
-        // let prompt = prompt.replace(" ", "*");
         Self {
             prompt,
             input: vec![],
@@ -55,8 +56,9 @@ impl Thok {
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
-            skip: 0,
-            line: 0,
+            line_lengths: VecDeque::new(),
+            total_line_length: 0,
+            skip_curr: 0,
         }
     }
 
@@ -156,7 +158,7 @@ impl Thok {
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor_pos > 0 && self.cursor_pos > self.skip {
+        if self.cursor_pos > 0 && self.cursor_pos > self.total_line_length {
             self.input.remove(self.cursor_pos - 1);
             self.decrement_cursor();
         }
@@ -241,15 +243,18 @@ impl Thok {
     }
 
     pub fn get_skip_count(&mut self, max_width: usize) {
-        if any(&self.input[self.skip..], |x| {
+        if any(&self.input[self.total_line_length..], |x| {
             x.outcome == Outcome::Incorrect
         }) {
             return;
         }
-        let count = self.cursor_pos - self.skip;
+        let count = self.cursor_pos - self.total_line_length;
         if count == 0 {
-            self.skip += max_width;
-            self.line += 1;
+            self.line_lengths.push_back(max_width);
+            if self.line_lengths.len() >= 2 {
+                self.skip_curr += self.line_lengths.pop_front().unwrap();
+            }
+            self.total_line_length += max_width;
             return;
         }
         let rest = &self.prompt[self.cursor_pos..];
@@ -258,8 +263,11 @@ impl Thok {
             let next_word = &rest[..index];
             let next_word_len = next_word.len();
             if count + next_word_len > max_width {
-                self.skip += count;
-                self.line += 1;
+                self.line_lengths.push_back(count);
+                self.total_line_length += count;
+            }
+            if self.line_lengths.len() >= 2 {
+                self.skip_curr += self.line_lengths.pop_front().unwrap();
             }
         }
     }

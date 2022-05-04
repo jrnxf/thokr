@@ -63,11 +63,11 @@ impl Widget for &Thok {
                 let mut spans = self
                     .input
                     .iter()
-                    .skip(self.skip)
+                    .skip(self.skip_curr)
                     .enumerate()
                     .map(|(idx, input)| {
                         Span::styled(
-                            self.get_expected_char(self.skip + idx).to_string(),
+                            self.get_expected_char(self.skip_curr + idx).to_string(),
                             match input.outcome {
                                 Outcome::Correct => green_bold_style,
                                 Outcome::Incorrect => red_bold_style,
