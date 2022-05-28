@@ -1,8 +1,10 @@
+use cgisf_lib::cgisf;
 use rand::seq::SliceRandom;
 use serde::Deserialize;
 use serde_json::from_str;
 
 use include_dir::{include_dir, Dir};
+use rand::Rng;
 use std::error::Error;
 
 static LANG_DIR: Dir = include_dir!("src/lang");
@@ -18,6 +20,29 @@ pub struct Language {
 impl Language {
     pub fn new(file_name: String) -> Self {
         read_language_from_file(format!("{}.json", file_name)).unwrap()
+    }
+
+    pub fn get_random_sentence(&self, num: usize) -> (Vec<String>, usize) {
+        let rng = &mut rand::thread_rng();
+        let mut vec = Vec::new();
+        let mut word_count = 0;
+        for i in 0..num {
+            let mut s = cgisf(
+                rng.gen_range(1..3),
+                rng.gen_range(1..3),
+                rng.gen_range(1..5),
+                rng.gen_bool(0.5),
+                rng.gen_range(1..3),
+                rng.gen_bool(0.5),
+            );
+            word_count += &s.matches(' ').count();
+            // gets the word count of the sentence.
+            if i == num - 1 {
+                s.pop();
+            }
+            vec.push(s);
+        }
+        (vec, word_count)
     }
 
     pub fn get_random(&self, num: usize) -> Vec<String> {

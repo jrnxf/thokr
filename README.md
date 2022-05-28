@@ -1,8 +1,5 @@
-<p align="center">
-  <img width="300" src="assets/thokr.svg">
-</p>
-<p align="center" style="font-size: 1.2rem;">a sleek typing tui written in rust</p>
-<hr >
+# thokr
+✨ sleek typing tui written in rust
 
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
 [![GitHub Deploy Workflow](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml)
@@ -37,12 +34,13 @@ For detailed usage run `thokr -h`.
 ### Examples
 
 | command                     |                                                    test contents |
-| :-------------------------- | ---------------------------------------------------------------: |
+|:----------------------------|-----------------------------------------------------------------:|
 | `thokr`                     |                          50 of the 200 most common english words |
 | `thokr -w 100`              |                         100 of the 200 most common English words |
 | `thokr -w 100 -l english1k` |                        100 of the 1000 most common English words |
 | `thokr -w 10 -s 5`          | 10 of the 200 most common English words (hard stop at 5 seconds) |
 | `thokr -p "$(cat foo.txt)"` |                   custom prompt with the output of `cat foo.txt` |
+| `thokr -f 4`                | 4 grammatical sentences with full stops; overrides word settings |
 
 _During a test you can press ← to start over or → to see a new prompt (assuming
 you didn't supply a custom one)_

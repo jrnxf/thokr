@@ -35,6 +35,10 @@ pub struct Cli {
     #[clap(short = 'w', long, default_value_t = 2000)]
     number_of_words: usize,
 
+    /// number of sentences to use in test
+    #[clap(short = 'f', long = "full-sentences")]
+    number_of_sentences: Option<usize>,
+
     /// number of seconds to run test
     #[clap(short = 's', long)]
     number_of_secs: Option<usize>,
@@ -69,39 +73,65 @@ struct App {
 
 impl App {
     fn new(cli: Cli) -> Self {
+        let mut count = 0;
         let prompt = if cli.prompt.is_some() {
             cli.prompt.clone().unwrap()
+        } else if cli.number_of_sentences.is_some() {
+            let language = cli.supported_language.as_lang();
+            let (s, count_tmp) = language.get_random_sentence(cli.number_of_sentences.unwrap());
+            count = count_tmp;
+            // sets the word count for the sentence.
+            s.join("")
         } else {
             let language = cli.supported_language.as_lang();
 
             language.get_random(cli.number_of_words).join(" ")
         };
-        Self {
-            thok: Thok::new(
-                prompt,
-                cli.number_of_words,
-                cli.number_of_secs.map(|ns| ns as f64),
-            ),
-            cli: Some(cli),
+        if cli.number_of_sentences.is_some() {
+            Self {
+                thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
+                cli: Some(cli),
+            }
+        } else {
+            Self {
+                thok: Thok::new(
+                    prompt,
+                    cli.number_of_words,
+                    cli.number_of_secs.map(|ns| ns as f64),
+                ),
+                cli: Some(cli),
+            }
         }
     }
 
     fn reset(&mut self, new_prompt: Option<String>) {
         let cli = self.cli.clone().unwrap();
-
+        let mut count = 0;
         let prompt = match new_prompt {
             Some(_) => new_prompt.unwrap(),
-            _ => {
-                let language = cli.supported_language.as_lang();
-                language.get_random(cli.number_of_words).join(" ")
-            }
+            _ => match cli.number_of_sentences {
+                Some(t) => {
+                    let language = cli.supported_language.as_lang();
+                    let (s, count_tmp) = language.get_random_sentence(t);
+                    count = count_tmp;
+                    // sets the word count for the sentence
+                    s.join("")
+                }
+                _ => {
+                    let language = cli.supported_language.as_lang();
+                    language.get_random(cli.number_of_words).join(" ")
+                }
+            },
         };
-
-        self.thok = Thok::new(
-            prompt,
-            cli.number_of_words,
-            cli.number_of_secs.map(|ns| ns as f64),
-        );
+        if cli.number_of_sentences.is_some() {
+            self.thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
+        } else {
+            self.thok = Thok::new(
+                prompt,
+                cli.number_of_words,
+                cli.number_of_secs.map(|ns| ns as f64),
+            );
+        }
     }
 }
 
