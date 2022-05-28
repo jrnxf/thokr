@@ -158,7 +158,7 @@ impl Thok {
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor_pos > 0 && self.cursor_pos > self.total_line_length {
+        if self.cursor_pos > self.total_line_length {
             self.input.remove(self.cursor_pos - 1);
             self.decrement_cursor();
         }
