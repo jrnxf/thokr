@@ -32,7 +32,7 @@ const TICK_RATE_MS: u64 = 100;
 #[clap(version, about, long_about= None)]
 pub struct Cli {
     /// number of words to use in test
-    #[clap(short = 'w', long, default_value_t = 2000)]
+    #[clap(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
     /// number of sentences to use in test
