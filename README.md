@@ -1,8 +1,5 @@
-<p align="center">
-  <img width="300" src="assets/thokr.svg">
-</p>
-<p align="center" style="font-size: 1.2rem;">a sleek typing tui written in rust</p>
-<hr >
+# thokr
+✨ sleek typing tui written in rust
 
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
 [![GitHub Deploy Workflow](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml)
