@@ -251,21 +251,6 @@ impl Thok {
             return;
         }
         let count = self.cursor_pos - self.total_line_length;
-        
-        // this is for when the number of characters in a line
-        // is exactly equal to the max line length
-        if count == 0 {
-            self.line_lengths.push_back(max_width);
-            // we start skipping lines when the number of lines completed is >= 2
-            // the length of the deque is at most 2 - the line lengths for the previous 2 lines
-            // line length is the actual number of characters in a line 
-            if self.line_lengths.len() >= 2 {
-                // pop the line length of the last line in a FIFO manner
-                self.skip_curr += self.line_lengths.pop_front().unwrap();
-            }
-            self.total_line_length += max_width;
-            return;
-        }
 
         // this is the case when the current position is < the max width
         // but the next word might not fit and may be on the next line
@@ -285,9 +270,11 @@ impl Thok {
                 self.line_lengths.push_back(count);
                 self.total_line_length += count;
             }
-            // same as before - if the number of lines completed is >=2, we need to skip 
-            // the number of characters that occurred in the popped line
+            // we start skipping lines when the number of lines completed is >= 2
+            // the length of the deque is at most 2 - the line lengths for the previous 2 lines
+            // line length is the actual number of characters in a line
             if self.line_lengths.len() >= 2 {
+                // pop the line length of the last line in a FIFO manner
                 self.skip_curr += self.line_lengths.pop_front().unwrap();
             }
         }
