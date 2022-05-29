@@ -2,7 +2,7 @@ use crate::util::std_dev;
 use crate::TICK_RATE_MS;
 use chrono::prelude::*;
 use directories::ProjectDirs;
-use itertools::{any, Itertools};
+use itertools::Itertools;
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
@@ -243,13 +243,6 @@ impl Thok {
     }
 
     pub fn get_skip_count(&mut self, max_width: usize) {
-        if any(&self.input[self.total_line_length..], |x| {
-            x.outcome == Outcome::Incorrect
-        }) {
-            // this ensures that the user cannot move to the next line if there errors/
-            // mistakes in the current one
-            return;
-        }
         let count = self.cursor_pos - self.total_line_length;
 
         // this is the case when the current position is < the max width

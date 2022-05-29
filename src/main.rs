@@ -177,7 +177,7 @@ fn start_tui<B: Backend>(
 
     loop {
         let mut exit_type: ExitType = ExitType::Quit;
-        terminal.draw(|f| ui(app, f, false))?;
+        terminal.draw(|f| ui(app, f))?;
         loop {
             let app = &mut app;
 
@@ -189,14 +189,13 @@ fn start_tui<B: Backend>(
                         if app.thok.has_finished() {
                             app.thok.calc_results();
                         }
-                        terminal.draw(|f| ui(app, f, false))?;
+                        terminal.draw(|f| ui(app, f))?;
                     }
                 }
                 ThokEvent::Resize => {
-                    terminal.draw(|f| ui(app, f, false))?;
+                    terminal.draw(|f| ui(app, f))?;
                 }
                 ThokEvent::Key(key) => {
-                    let mut is_space = false;
                     match key.code {
                         KeyCode::Esc => {
                             break;
@@ -224,9 +223,6 @@ fn start_tui<B: Backend>(
 
                             match app.thok.has_finished() {
                                 false => {
-                                    if c == ' ' {
-                                        is_space = true;
-                                    }
                                     app.thok.write(c);
                                     if app.thok.has_finished() {
                                         app.thok.calc_results();
@@ -253,7 +249,7 @@ fn start_tui<B: Backend>(
                         }
                         _ => {}
                     }
-                    terminal.draw(|f| ui(app, f, is_space))?;
+                    terminal.draw(|f| ui(app, f))?;
                 }
             }
         }
@@ -310,10 +306,8 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     rx
 }
 
-fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>, is_space: bool) {
-    if is_space {
-        app.thok
-            .get_skip_count((f.size().width - HORIZONTAL_MARGIN * 2).into());
-    }
+fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>) {
+    app.thok
+        .get_skip_count((f.size().width - HORIZONTAL_MARGIN * 2).into());
     f.render_widget(&app.thok, f.size());
 }
