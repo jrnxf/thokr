@@ -3,7 +3,7 @@ use crate::TICK_RATE_MS;
 use chrono::prelude::*;
 use directories::ProjectDirs;
 use itertools::Itertools;
-use std::collections::VecDeque;
+use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
@@ -36,9 +36,11 @@ pub struct Thok {
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
-    pub line_lengths: VecDeque<usize>,
+    pub line_lengths: Vec<usize>,
     pub total_line_length: usize,
     pub skip_curr: usize,
+    pub current_line: usize,
+    pub endpoints: HashSet<usize>,
 }
 
 impl Thok {
@@ -56,9 +58,11 @@ impl Thok {
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
-            line_lengths: VecDeque::new(),
+            line_lengths: vec![],
             total_line_length: 0,
             skip_curr: 0,
+            current_line: 0,
+            endpoints: HashSet::new(),
         }
     }
 
@@ -158,8 +162,23 @@ impl Thok {
     }
 
     pub fn backspace(&mut self) {
-        if self.cursor_pos > self.total_line_length {
+        if self.cursor_pos > 0 {
             self.input.remove(self.cursor_pos - 1);
+            // if the user is on an endpoint
+            if self.endpoints.contains(&self.cursor_pos) {
+                // and we have already skipped a line
+                if self.skip_curr > 0 {
+                    // we need to add another line to the view
+                    // so we "unskip" it
+                    self.skip_curr -= self.line_lengths[self.current_line - 2];
+                }
+                // line changed so decrease the total line length and the current line
+                self.total_line_length -= self.line_lengths.pop().unwrap();
+                self.current_line -= 1;
+
+                // and finally remove it from the set
+                self.endpoints.remove(&self.cursor_pos);
+            }
             self.decrement_cursor();
         }
     }
@@ -245,7 +264,7 @@ impl Thok {
     pub fn get_skip_count(&mut self, max_width: usize) {
         let count = self.cursor_pos - self.total_line_length;
 
-        // this is the case when the current position is < the max width
+        // this is the case when the current position is <= the max width
         // but the next word might not fit and may be on the next line
         // first, we remove everything up to the current position
         let rest = &self.prompt[self.cursor_pos..];
@@ -259,16 +278,22 @@ impl Thok {
             // if the next word can't fit on the current line
             if count + next_word_len > max_width {
                 // the current line length is count
-                // we push it on the deque
-                self.line_lengths.push_back(count);
+                // we push it on the Vector
+                self.line_lengths.push(count);
                 self.total_line_length += count;
-            }
-            // we start skipping lines when the number of lines completed is >= 2
-            // the length of the deque is at most 2 - the line lengths for the previous 2 lines
-            // line length is the actual number of characters in a line
-            if self.line_lengths.len() >= 2 {
-                // pop the line length of the last line in a FIFO manner
-                self.skip_curr += self.line_lengths.pop_front().unwrap();
+
+                // this stores the endpoint of each line
+                // when the user hits backspace, its used to check if we should go back to a previous line
+                self.endpoints.insert(self.total_line_length);
+
+                self.current_line += 1;
+                // we start skipping lines when the number of lines completed is >= 2
+                // line length is the actual number of characters in a line
+                if self.line_lengths.len() >= 2 {
+                    // we always have a delay of 2 - if you're on line 3, then we must skip line
+                    // 3 - 2, that is line 1
+                    self.skip_curr += self.line_lengths[self.current_line - 2];
+                }
             }
         }
     }
