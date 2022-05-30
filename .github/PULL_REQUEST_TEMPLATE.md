@@ -1,12 +1,6 @@
 <!--
 Thanks for your interest in the project. Bugs filed and PRs submitted are appreciated!
 
-Please make sure that you are familiar with and follow the Code of Conduct for
-this project (found in the CODE_OF_CONDUCT.md file).
-
-Also, please make sure you're familiar with and follow the instructions in the
-contributing guidelines (found in the CONTRIBUTING.md file).
-
 Please fill out the information below to expedite the review and (hopefully)
 merge of your pull request!
 -->
@@ -32,6 +26,7 @@ merge of your pull request!
 <!-- to check an item, place an "x" in the box like so: "- [x] Documentation" -->
 
 - [ ] `Allow edits from maintainers` option checked
+- [ ] Branch name is prefixed with `[your_username]/` (ex. `coloradocolby/featureX`)
 - [ ] Documentation added
 - [ ] Tests added
 - [ ] No failing actions
