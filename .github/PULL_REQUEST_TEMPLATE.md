@@ -32,6 +32,7 @@ merge of your pull request!
 <!-- to check an item, place an "x" in the box like so: "- [x] Documentation" -->
 
 - [ ] `Allow edits from maintainers` option checked
+- [ ] Branch name is prefixed with `[your_username]/` (ex. `coloradocolby/featureX`)
 - [ ] Documentation added
 - [ ] Tests added
 - [ ] No failing actions

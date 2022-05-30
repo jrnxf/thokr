@@ -1,12 +1,9 @@
-<p align="center">
-  <img width="300" src="assets/thokr.svg">
-</p>
-<p align="center" style="font-size: 1.2rem;">a sleek typing tui written in rust</p>
-<hr >
+# thokr
+✨ sleek typing tui written in rust
 
 [![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
 [![GitHub Deploy Workflow](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml)
-[![License](https://img.shields.io/badge/License-MIT-default.svg)](.github/LICENSE.md)
+[![License](https://img.shields.io/badge/License-MIT-default.svg)](./LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
 [![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)](https://github.com/coloradocolby/thokr/stargazers)
 
@@ -102,10 +99,10 @@ create a [pull request](https://github.com/coloradocolby/thokr/pulls). You can
 also simply open an issue and select `Feature Request`
 
 1. Fork the repo
-2. Create your feature branch (`git checkout -b feature/xyz`)
-3. Commit your changes (`git commit -m 'Add some xyz'`)
+2. Create your feature branch (`git checkout -b [your_username]/xyz`)
+3. Commit your changes (`git commit -m 'add some xyz'`)
 4. Rebase off main (`git fetch --all && git rebase origin/main`)
-5. Push to your branch (`git push origin feature/xyz`)
+5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
 
 See the [open issues](https://github.com/coloradocolby/thokr/issues) for a full
@@ -113,7 +110,7 @@ list of proposed features (and known issues).
 
 ## License
 
-Distributed under the MIT License. See [LICENSE.md](.github/LICENSE.md) for more
+Distributed under the MIT License. See [LICENSE.md](./LICENSE.md) for more
 information.
 
 ## Acknowledgments
