@@ -84,7 +84,7 @@ impl App {
             // such as the title of the article
             match random_article() {
                 Some(x) => match x.extract {
-                    Some(txt) => txt,
+                    Some(txt) => txt.chars().filter(|c: &char| c.is_ascii()).collect(),
                     None => "This page did not contain anything".to_string(),
                 },
                 None => {
