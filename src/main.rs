@@ -2,6 +2,7 @@ mod lang;
 mod thok;
 mod ui;
 mod util;
+mod wiki;
 
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
@@ -23,6 +24,7 @@ use tui::{
     Frame, Terminal,
 };
 use webbrowser::Browser;
+use wiki::random_article;
 
 const TICK_RATE_MS: u64 = 100;
 
@@ -33,6 +35,10 @@ pub struct Cli {
     /// number of words to use in test
     #[clap(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
+
+    /// load a random article from Wikipedia
+    #[clap(short = 'W', long)]
+    wikipedia: bool,
 
     /// number of sentences to use in test
     #[clap(short = 'f', long = "full-sentences")]
@@ -73,7 +79,20 @@ struct App {
 impl App {
     fn new(cli: Cli) -> Self {
         let mut count = 0;
-        let prompt = if cli.prompt.is_some() {
+        let prompt = if cli.wikipedia {
+            // This contains other info that could be used,
+            // such as the title of the article
+            match random_article() {
+                Some(x) => match x.extract {
+                    Some(txt) => txt,
+                    None => "This page did not contain anything".to_string(),
+                },
+                None => {
+                    println!("An error has occurred while fetching an article. Please check your connection or file a bug");
+                    std::process::exit(1);
+                }
+            }
+        } else if cli.prompt.is_some() {
             cli.prompt.clone().unwrap()
         } else if cli.number_of_sentences.is_some() {
             let language = cli.supported_language.as_lang();
