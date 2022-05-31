@@ -66,13 +66,18 @@ impl Widget for &Thok {
                     .skip(self.skip_curr)
                     .enumerate()
                     .map(|(idx, input)| {
-                        Span::styled(
-                            self.get_expected_char(self.skip_curr + idx).to_string(),
-                            match input.outcome {
-                                Outcome::Correct => green_bold_style,
-                                Outcome::Incorrect => red_bold_style,
-                            },
-                        )
+                        let expected = self.get_expected_char(self.skip_curr + idx).to_string();
+
+                        match input.outcome {
+                            Outcome::Incorrect => Span::styled(
+                                match expected.as_str() {
+                                    " " => "·".to_owned(),
+                                    _ => expected,
+                                },
+                                red_bold_style,
+                            ),
+                            Outcome::Correct => Span::styled(expected, green_bold_style),
+                        }
                     })
                     .collect::<Vec<Span>>();
 
