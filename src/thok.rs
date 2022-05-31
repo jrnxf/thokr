@@ -261,8 +261,17 @@ impl Thok {
         Ok(())
     }
 
-    pub fn get_skip_count(&mut self, max_width: usize) {
+    pub fn update_skip_count(&mut self, max_width: usize) {
         let count = self.cursor_pos - self.total_line_length;
+
+        // this is a special case when there's a single word which spans multiple lines
+        // since there is no space, the check at line 283 fails.
+        if count == max_width {
+            // user is now on a new line
+            // so scroll
+            self.scroll_line(count);
+            return;
+        }
 
         // this is the case when the current position is <= the max width
         // but the next word might not fit and may be on the next line
@@ -277,24 +286,29 @@ impl Thok {
             let next_word_len = next_word.len();
             // if the next word can't fit on the current line
             if count + next_word_len > max_width {
-                // the current line length is count
-                // we push it on the Vector
-                self.line_lengths.push(count);
-                self.total_line_length += count;
-
-                // this stores the endpoint of each line
-                // when the user hits backspace, its used to check if we should go back to a previous line
-                self.endpoints.insert(self.total_line_length);
-
-                self.current_line += 1;
-                // we start skipping lines when the number of lines completed is >= 2
-                // line length is the actual number of characters in a line
-                if self.line_lengths.len() >= 2 {
-                    // we always have a delay of 2 - if you're on line 3, then we must skip line
-                    // 3 - 2, that is line 1
-                    self.skip_curr += self.line_lengths[self.current_line - 2];
-                }
+                // user is now on a new line
+                // so scroll
+                self.scroll_line(count);
             }
+        }
+    }
+
+    fn scroll_line(&mut self, line_length: usize) {
+        // line_length is the actual number of characters in this line
+        // we push it on the Vector
+        self.line_lengths.push(line_length);
+        self.total_line_length += line_length;
+
+        // this stores the endpoint of each line
+        // when the user hits backspace, its used to check if we should go back to a previous line
+        self.endpoints.insert(self.total_line_length);
+        self.current_line += 1;
+
+        // we start skipping lines when the number of lines completed is >= 2
+        if self.line_lengths.len() >= 2 {
+            // we always have a delay of 2 - if you're on line 3, then we must skip line
+            // 3 - 2, that is line 1
+            self.skip_curr += self.line_lengths[self.current_line - 2];
         }
     }
 }

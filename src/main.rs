@@ -308,6 +308,6 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
 
 fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>) {
     app.thok
-        .get_skip_count((f.size().width - HORIZONTAL_MARGIN * 2).into());
+        .update_skip_count((f.size().width - HORIZONTAL_MARGIN * 2).into());
     f.render_widget(&app.thok, f.size());
 }
