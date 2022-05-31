@@ -36,25 +36,32 @@ impl Widget for &Thok {
         match !self.has_finished() {
             true => {
                 let max_chars_per_line = area.width - (HORIZONTAL_MARGIN * 2);
-                let mut prompt_occupied_lines =
-                    ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
+                let prompt_occupied_lines = if self.prompt.width() <= max_chars_per_line as usize {
+                    1
+                } else {
+                    3
+                };
 
                 let time_left_lines = if self.number_of_secs.is_some() { 2 } else { 0 };
-                if self.prompt.width() <= max_chars_per_line as usize {
-                    prompt_occupied_lines = 1;
-                }
+
                 let chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .horizontal_margin(HORIZONTAL_MARGIN)
                     .constraints(
                         [
                             Constraint::Length(
-                                ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
+                                ((area.height as f64
+                                    - prompt_occupied_lines as f64
+                                    - time_left_lines as f64)
+                                    / 2.0) as u16,
                             ),
                             Constraint::Length(time_left_lines),
-                            Constraint::Length(3),
+                            Constraint::Length(prompt_occupied_lines),
                             Constraint::Length(
-                                ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
+                                ((area.height as f64
+                                    - prompt_occupied_lines as f64
+                                    - time_left_lines as f64)
+                                    / 2.0) as u16,
                             ),
                         ]
                         .as_ref(),
