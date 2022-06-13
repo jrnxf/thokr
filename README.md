@@ -1,13 +1,50 @@
 # thokr
-✨ sleek typing tui written in rust
+✨ sleek typing tui with visualized results and historical logging
 
-[![GitHub Build Workflow](https://github.com/coloradocolby/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/build.yml)
-[![GitHub Deploy Workflow](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/coloradocolby/thokr/actions/workflows/deploy.yml)
+[![GitHub Build Workflow](https://github.com/thatvegandev/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/build.yml)
+[![GitHub Deploy Workflow](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](./LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
-[![Github Stars](https://img.shields.io/github/stars/coloradocolby/thokr)](https://github.com/coloradocolby/thokr/stargazers)
+[![Github Stars](https://img.shields.io/github/stars/thatvegandev/thokr)](https://github.com/thatvegandev/thokr/stargazers)
 
-![demo](./assets/demo.gif)
+![demo](https://github.com/thatvegandev/assets/raw/main/thokr/demo.gif)
+
+## Usage
+
+For detailed usage run `thokr -h`.
+
+```
+thokr 0.4.1
+sleek typing tui with visualized results and historical logging
+
+USAGE:
+    thokr [OPTIONS]
+
+OPTIONS:
+    -f, --full-sentences <NUMBER_OF_SENTENCES>
+            number of sentences to use in test
+
+    -h, --help
+            Print help information
+
+    -l, --supported-language <SUPPORTED_LANGUAGE>
+            language to pull words from [default: english] [possible values: english, english1k,
+            english10k]
+
+    -p, --prompt <PROMPT>
+            custom prompt to use
+
+    -s, --number-of-secs <NUMBER_OF_SECS>
+            number of seconds to run test
+
+    -V, --version
+            Print version information
+
+    -w, --number-of-words <NUMBER_OF_WORDS>
+            number of words to use in test [default: 15]
+
+```
+
 
 ## Installation
 
@@ -20,7 +57,7 @@ $ cargo install thokr
 ### Docker
 
 ```sh
-$ docker run -it coloradocolby/thokr
+$ docker run -it thatvegandev/thokr
 ```
 
 ### Arch Linux
@@ -95,7 +132,7 @@ can easily track your progress over time.
 All contributions are **greatly appreciated**.
 
 If you have a suggestion that would make thokr better, please fork the repo and
-create a [pull request](https://github.com/coloradocolby/thokr/pulls). You can
+create a [pull request](https://github.com/thatvegandev/thokr/pulls). You can
 also simply open an issue and select `Feature Request`
 
 1. Fork the repo
@@ -105,7 +142,7 @@ also simply open an issue and select `Feature Request`
 5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
 
-See the [open issues](https://github.com/coloradocolby/thokr/issues) for a full
+See the [open issues](https://github.com/thatvegandev/thokr/issues) for a full
 list of proposed features (and known issues).
 
 ## License
@@ -123,8 +160,6 @@ Check out these amazing projects that inspired thokr!
 
 ## Follow
 
-[![github](https://img.shields.io/github/followers/coloradocolby?style=social)](https://github.com/coloradocolby)
-
-[![twitter](https://img.shields.io/twitter/follow/coloradocolby?color=white&style=social)](https://twitter.com/coloradocolby)
-
-[![youtube](https://img.shields.io/youtube/channel/subscribers/UCEDfokz6igeN4bX7Whq49-g?style=social)](https://youtube.com/user/coloradocolby)
+[![github](https://img.shields.io/github/followers/thatvegandev?style=social)](https://github.com/thatvegandev)
+[![twitter](https://img.shields.io/twitter/follow/thatvegandev?color=white&style=social)](https://twitter.com/thatvegandev)
+[![youtube](https://img.shields.io/youtube/channel/subscribers/UCEDfokz6igeN4bX7Whq49-g?style=social)](https://youtube.com/user/thatvegandev)

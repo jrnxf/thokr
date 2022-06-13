@@ -1,14 +1,14 @@
 [package]
 name = "thokr"
-description = "a sleek typing tui written in rust"
-version = "0.4.0"
+description = "sleek typing tui with visualized results and historical logging"
+version = "0.4.1"
 readme = "README.md"
-repository = "https://github.com/coloradocolby/thokr.git"
-homepage = "https://github.com/coloradocolby/thokr"
+repository = "https://github.com/thatvegandev/thokr.git"
+homepage = "https://github.com/thatvegandev/thokr"
 license = "MIT"
-authors = ["Colby Thomas <coloradocolby@gmail.com>"]
+authors = ["Colby Thomas <thatvegandev@gmail.com>"]
 edition = "2021"
-exclude = ["assets/*", ".github", "*.log", "Dockerfile"]
+exclude = [".github", "*.log", "Dockerfile"]
 keywords = ["tui", "terminal", "typing"]
 
 [dependencies]
