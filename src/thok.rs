@@ -5,7 +5,8 @@ use directories::ProjectDirs;
 use itertools::Itertools;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
-use std::{char, collections::HashMap, time::SystemTime};
+use std::{collections::HashMap, time::SystemTime};
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
@@ -13,9 +14,9 @@ pub enum Outcome {
     Incorrect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Input {
-    pub char: char,
+    pub grapheme_cluster: String,
     pub outcome: Outcome,
     pub timestamp: SystemTime,
 }
@@ -60,8 +61,16 @@ impl Thok {
             Some(self.seconds_remaining.unwrap() - (TICK_RATE_MS as f64 / 1000_f64));
     }
 
-    pub fn get_expected_char(&self, idx: usize) -> char {
-        self.prompt.chars().nth(idx).unwrap()
+    pub fn get_expected_char(&self, idx: usize) -> &str {
+        self.prompt.graphemes(true).nth(idx).expect("failed to obtain grapheme")
+    }
+
+    pub fn get_remaining_chars(&self, idx: usize) -> String {
+        self.prompt.graphemes(true).skip(idx + 1).collect::<Vec<&str>>().join("")
+    }
+
+    pub fn get_prompt_graphemes(&self) -> Vec<&str> {
+        return self.prompt.graphemes(true).collect::<Vec<&str>>()
     }
 
     pub fn increment_cursor(&mut self) {
@@ -161,7 +170,7 @@ impl Thok {
         self.started_at = Some(SystemTime::now());
     }
 
-    pub fn write(&mut self, c: char) {
+    pub fn write(&mut self, c: &str) {
         let idx = self.input.len();
         if idx == 0 && self.started_at.is_none() {
             self.start();
@@ -176,7 +185,7 @@ impl Thok {
         self.input.insert(
             self.cursor_pos,
             Input {
-                char: c,
+                grapheme_cluster: c.to_string(),
                 outcome,
                 timestamp: SystemTime::now(),
             },
@@ -189,8 +198,8 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        (self.input.len() == self.prompt.len())
-            || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
+        self.get_prompt_graphemes().len() == self.input.len()
+            || self.seconds_remaining.map(|remaining| remaining <= 0.0).unwrap_or(false)
     }
 
     pub fn save_results(&self) -> io::Result<()> {

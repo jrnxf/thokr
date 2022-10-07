@@ -89,7 +89,7 @@ impl Widget for &Thok {
                 ));
 
                 spans.push(Span::styled(
-                    self.prompt[(self.cursor_pos + 1)..self.prompt.len()].to_string(),
+                    self.get_remaining_chars(self.cursor_pos),
                     dim_bold_style,
                 ));
 

@@ -22,6 +22,7 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     Frame, Terminal,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use webbrowser::Browser;
 
 const TICK_RATE_MS: u64 = 100;
@@ -68,6 +69,7 @@ impl SupportedLanguage {
 struct App {
     cli: Option<Cli>,
     thok: Thok,
+    partial_input: String
 }
 
 impl App {
@@ -90,6 +92,7 @@ impl App {
             Self {
                 thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
                 cli: Some(cli),
+                partial_input: String::new()
             }
         } else {
             Self {
@@ -99,6 +102,7 @@ impl App {
                     cli.number_of_secs.map(|ns| ns as f64),
                 ),
                 cli: Some(cli),
+                partial_input: String::new()
             }
         }
     }
@@ -131,6 +135,8 @@ impl App {
                 cli.number_of_secs.map(|ns| ns as f64),
             );
         }
+
+        self.partial_input.clear();
     }
 }
 
@@ -223,9 +229,18 @@ fn start_tui<B: Backend>(
 
                             match app.thok.has_finished() {
                                 false => {
-                                    app.thok.write(c);
-                                    if app.thok.has_finished() {
-                                        app.thok.calc_results();
+                                    app.partial_input.push(c);
+                                    match app.partial_input.graphemes(true).next() {
+                                        Some(cluster) => {
+                                            app.thok.write(cluster);
+                                            app.partial_input.clear();
+                                            if app.thok.has_finished() {
+                                                app.thok.calc_results();
+                                            }
+                                        }
+                                        None => {
+                                            /* we don't have a valid grapheme cluster yet, ignore */
+                                        }
                                     }
                                 }
                                 true => match key.code {
