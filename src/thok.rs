@@ -39,7 +39,12 @@ pub struct Thok {
 }
 
 impl Thok {
-    pub fn new(prompt: String, number_of_words: usize, number_of_secs: Option<f64>, death_mode: bool) -> Self {
+    pub fn new(
+        prompt: String,
+        number_of_words: usize,
+        number_of_secs: Option<f64>,
+        death_mode: bool,
+    ) -> Self {
         Self {
             prompt,
             input: vec![],
@@ -191,19 +196,17 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        let mut finished = (self.input.len() == self.prompt.len())
-            || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0);
-
-        if self.death_mode {
-            let has_incorrect = self
+        let finished_prompt = self.input.len() == self.prompt.len();
+        let out_of_time =
+            self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0;
+        let is_fatal_error = self.death_mode
+            && self
                 .input
                 .clone()
                 .into_iter()
                 .any(|i| i.outcome == Outcome::Incorrect);
-            finished = finished || has_incorrect;
-        }
 
-        return finished;
+        finished_prompt || out_of_time || is_fatal_error
     }
 
     pub fn save_results(&self) -> io::Result<()> {
