@@ -135,7 +135,7 @@ impl Widget for &Thok {
 
                 for ts in &self.wpm_coords {
                     if ts.1 > highest_wpm {
-                        highest_wpm = ts.1 as f64;
+                        highest_wpm = ts.1;
                     }
                 }
 
@@ -178,11 +178,25 @@ impl Widget for &Thok {
 
                 chart.render(chunks[0], buf);
 
+                let bad_death = self.death_mode
+                    && self
+                        .input
+                        .clone()
+                        .into_iter()
+                        .any(|i| i.outcome == Outcome::Incorrect);
+
                 let stats = Paragraph::new(Span::styled(
-                    format!(
-                        "{} wpm   {}% acc   {:.2} sd",
-                        self.wpm, self.accuracy, self.std_dev
-                    ),
+                    if bad_death {
+                        format!(
+                            "💀 {} wpm   {}% acc   {:.2} sd 💀",
+                            self.wpm, self.accuracy, self.std_dev
+                        )
+                    } else {
+                        format!(
+                            "{} wpm   {}% acc   {:.2} sd",
+                            self.wpm, self.accuracy, self.std_dev
+                        )
+                    },
                     bold_style,
                 ))
                 .alignment(Alignment::Center);
