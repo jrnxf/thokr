@@ -261,7 +261,11 @@ impl Thok {
         Ok(())
     }
 
-    pub fn update_skip_count(&mut self, max_width: usize) {
+    // this is a helper function which decides if we should scroll to the next line
+    // it is called on every keystroke and it calculates the length of the next word
+    // to determine if it can fit on the same line. If it can't, it means we have moved onto the
+    // next line and so we attempt to scroll - that is achieved by the scroll_line function
+    pub fn scroll_if_line_exhausted(&mut self, max_width: usize) {
         let count = self.cursor_pos - self.total_line_length;
 
         // this is a special case when there's a single word which spans multiple lines
@@ -293,6 +297,10 @@ impl Thok {
         }
     }
 
+    // this function is responsible for scrolling to the next line
+    // if the number of typed lines is less than 2, then this does nothing
+    // if its greater, its updates the skip_count so that the 2nd last typed line
+    // is no longer visible
     fn scroll_line(&mut self, line_length: usize) {
         // line_length is the actual number of characters in this line
         // we push it on the Vector
