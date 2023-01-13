@@ -187,10 +187,7 @@ impl Widget for &Thok {
 
                 let stats = Paragraph::new(Span::styled(
                     if bad_death {
-                        format!(
-                            "💀 {} wpm   {}% acc   {:.2} sd 💀",
-                            self.wpm, self.accuracy, self.std_dev
-                        )
+                        format!("💀")
                     } else {
                         format!(
                             "{} wpm   {}% acc   {:.2} sd",
