@@ -32,13 +32,19 @@ pub struct Thok {
     pub seconds_remaining: Option<f64>,
     pub number_of_secs: Option<f64>,
     pub number_of_words: usize,
+    pub death_mode: bool,
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
 }
 
 impl Thok {
-    pub fn new(prompt: String, number_of_words: usize, number_of_secs: Option<f64>) -> Self {
+    pub fn new(
+        prompt: String,
+        number_of_words: usize,
+        number_of_secs: Option<f64>,
+        death_mode: bool,
+    ) -> Self {
         Self {
             prompt,
             input: vec![],
@@ -48,6 +54,7 @@ impl Thok {
             started_at: None,
             number_of_secs,
             number_of_words,
+            death_mode,
             seconds_remaining: number_of_secs,
             wpm: 0.0,
             accuracy: 0.0,
@@ -189,8 +196,17 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        (self.input.len() == self.prompt.len())
-            || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
+        let finished_prompt = self.input.len() == self.prompt.len();
+        let out_of_time =
+            self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0;
+        let is_fatal_error = self.death_mode
+            && self
+                .input
+                .clone()
+                .into_iter()
+                .any(|i| i.outcome == Outcome::Incorrect);
+
+        finished_prompt || out_of_time || is_fatal_error
     }
 
     pub fn save_results(&self) -> io::Result<()> {
