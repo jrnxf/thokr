@@ -1,8 +1,8 @@
-use tui::{
+use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Line, Span},
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
@@ -93,7 +93,7 @@ impl Widget for &Thok {
                     dim_bold_style,
                 ));
 
-                let widget = Paragraph::new(Spans::from(spans))
+                let widget = Paragraph::new(Line::from(spans))
                     .alignment(if prompt_occupied_lines == 1 {
                         // when the prompt is small enough to fit on one line
                         // centering the text gives a nice zen feeling
@@ -140,7 +140,7 @@ impl Widget for &Thok {
                 }
 
                 let datasets = vec![Dataset::default()
-                    .marker(tui::symbols::Marker::Braille)
+                    .marker(ratatui::symbols::Marker::Braille)
                     .style(magenta_style)
                     .graph_type(GraphType::Line)
                     .data(&self.wpm_coords)];
