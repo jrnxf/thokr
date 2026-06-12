@@ -188,6 +188,7 @@ fn start_tui<B: Backend>(
 
                         if app.thok.has_finished() {
                             app.thok.calc_results();
+                            let _ = app.thok.save_results();
                         }
                         terminal.draw(|f| ui(app, f))?;
                     }
@@ -226,6 +227,7 @@ fn start_tui<B: Backend>(
                                     app.thok.write(c);
                                     if app.thok.has_finished() {
                                         app.thok.calc_results();
+                                        let _ = app.thok.save_results();
                                     }
                                 }
                                 true => match key.code {

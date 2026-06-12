@@ -146,8 +146,6 @@ impl Thok {
             self.wpm = 0.0;
         }
         self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
-
-        let _ = self.save_results();
     }
 
     pub fn backspace(&mut self) {
