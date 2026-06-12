@@ -4,7 +4,8 @@ mod ui;
 mod util;
 
 use crate::{lang::Language, thok::Thok};
-use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, ValueEnum};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
@@ -28,30 +29,30 @@ const TICK_RATE_MS: u64 = 100;
 
 /// sleek typing tui with visualized results and historical logging
 #[derive(Parser, Debug, Clone)]
-#[clap(version, about, long_about= None)]
+#[command(version, about, long_about = None)]
 pub struct Cli {
     /// number of words to use in test
-    #[clap(short = 'w', long, default_value_t = 15)]
+    #[arg(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
     /// number of sentences to use in test
-    #[clap(short = 'f', long = "full-sentences")]
+    #[arg(short = 'f', long = "full-sentences")]
     number_of_sentences: Option<usize>,
 
     /// number of seconds to run test
-    #[clap(short = 's', long)]
+    #[arg(short = 's', long)]
     number_of_secs: Option<usize>,
 
     /// custom prompt to use
-    #[clap(short = 'p', long)]
+    #[arg(short = 'p', long)]
     prompt: Option<String>,
 
     /// language to pull words from
-    #[clap(short = 'l', long, arg_enum, default_value_t = SupportedLanguage::English)]
+    #[arg(short = 'l', long, value_enum, default_value_t = SupportedLanguage::English)]
     supported_language: SupportedLanguage,
 }
 
-#[derive(Debug, Copy, Clone, ArgEnum, strum_macros::Display)]
+#[derive(Debug, Copy, Clone, ValueEnum, strum_macros::Display)]
 enum SupportedLanguage {
     English,
     English1k,
