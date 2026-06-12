@@ -105,6 +105,12 @@ impl App {
     }
 }
 
+/// Best-effort terminal restore; used on panic and on exit.
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
 
@@ -112,6 +118,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut cmd = Cli::command();
         cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
     }
+
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        default_hook(info);
+    }));
 
     enable_raw_mode()?;
 
@@ -121,13 +133,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(cli);
-    start_tui(&mut terminal, &mut app)?;
+    let res = start_tui(&mut terminal, &mut app);
 
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen,)?;
+    restore_terminal();
     terminal.show_cursor()?;
 
-    Ok(())
+    res
 }
 
 enum ExitType {
