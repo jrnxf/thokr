@@ -24,6 +24,7 @@ pub struct Input {
 #[derive(Debug)]
 pub struct Thok {
     pub prompt: String,
+    pub prompt_chars: Vec<char>,
     pub input: Vec<Input>,
     pub raw_coords: Vec<(f64, f64)>,
     pub wpm_coords: Vec<(f64, f64)>,
@@ -39,8 +40,10 @@ pub struct Thok {
 
 impl Thok {
     pub fn new(prompt: String, number_of_words: usize, number_of_secs: Option<f64>) -> Self {
+        let prompt_chars = prompt.chars().collect();
         Self {
             prompt,
+            prompt_chars,
             input: vec![],
             raw_coords: vec![],
             wpm_coords: vec![],
@@ -60,8 +63,12 @@ impl Thok {
             Some(self.seconds_remaining.unwrap() - (TICK_RATE_MS as f64 / 1000_f64));
     }
 
+    pub fn char_count(&self) -> usize {
+        self.prompt_chars.len()
+    }
+
     pub fn get_expected_char(&self, idx: usize) -> char {
-        self.prompt.chars().nth(idx).unwrap()
+        self.prompt_chars[idx]
     }
 
     pub fn increment_cursor(&mut self) {
@@ -187,7 +194,7 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        (self.input.len() == self.prompt.len())
+        (self.input.len() == self.char_count())
             || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
     }
 
@@ -324,6 +331,30 @@ mod tests {
         // cumulative 5 chars => (60/1)*5/5 = 60, ceiled
         assert_eq!(thok.wpm, 60.0);
         assert_eq!(thok.wpm_coords.len(), 1);
+    }
+
+    #[test]
+    fn unicode_prompt_finishes_by_length() {
+        let mut thok = Thok::new("épée".to_string(), 1, None);
+        for c in ['é', 'p', 'é', 'e'] {
+            thok.write(c);
+        }
+        assert!(thok.has_finished());
+        assert!(thok.input.iter().all(|i| i.outcome == Outcome::Correct));
+    }
+
+    #[test]
+    fn unicode_wrong_char_marked_incorrect() {
+        let mut thok = Thok::new("épée".to_string(), 1, None);
+        thok.write('e');
+        assert_eq!(thok.input[0].outcome, Outcome::Incorrect);
+    }
+
+    #[test]
+    fn get_expected_char_multibyte() {
+        let thok = Thok::new("héllo".to_string(), 1, None);
+        assert_eq!(thok.get_expected_char(1), 'é');
+        assert_eq!(thok.get_expected_char(4), 'o');
     }
 
     #[test]
