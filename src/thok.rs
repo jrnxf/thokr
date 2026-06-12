@@ -91,7 +91,7 @@ impl Thok {
             .filter(|i| i.outcome == Outcome::Correct)
             .collect::<Vec<Input>>();
 
-        let elapsed_secs = self.started_at.unwrap().elapsed().unwrap().as_millis() as f64;
+        let elapsed_secs = self.started_at.unwrap().elapsed().unwrap().as_secs_f64();
 
         let whole_second_limit = elapsed_secs.floor();
 
@@ -355,6 +355,18 @@ mod tests {
         let thok = Thok::new("héllo".to_string(), 1, None);
         assert_eq!(thok.get_expected_char(1), 'é');
         assert_eq!(thok.get_expected_char(4), 'o');
+    }
+
+    #[test]
+    fn calc_results_buckets_have_sane_x_axis() {
+        let mut thok = thok_with_input("abcdef", "abcdef", &[100, 300, 500, 1200, 1400, 2350]);
+        thok.calc_results();
+        assert!(!thok.wpm_coords.is_empty());
+        assert!(thok.wpm_coords.iter().all(|(x, _)| x.is_finite()));
+        let last_x = thok.wpm_coords.last().unwrap().0;
+        assert!(last_x >= 2.0);
+        assert!(last_x < 60.0);
+        assert!(thok.wpm > 0.0);
     }
 
     #[test]
