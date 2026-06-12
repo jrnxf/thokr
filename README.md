@@ -9,6 +9,24 @@
 
 ![demo](https://github.com/thatvegandev/assets/raw/main/thokr/demo.gif)
 
+## Installation
+
+### Cargo
+
+```sh
+$ cargo install thokr
+```
+
+### Docker
+
+```sh
+$ docker run -it thatvegandev/thokr
+```
+
+### Arch Linux
+
+Install `thokr-git` from the AUR
+
 ## Usage
 
 For detailed usage run `thokr -h`.
@@ -46,28 +64,6 @@ OPTIONS:
 ```
 
 
-## Installation
-
-### Cargo
-
-```sh
-$ cargo install thokr
-```
-
-### Docker
-
-```sh
-$ docker run -it thatvegandev/thokr
-```
-
-### Arch Linux
-
-Install `thokr-git` from the AUR
-
-## Usage
-
-For detailed usage run `thokr -h`.
-
 ### Examples
 
 | command                     |                                                    test contents |
@@ -98,11 +94,11 @@ Upon completion of a test, a row outlining your results is appended to the
 `log.csv` file found in the following platform-specific folders. This way you
 can easily track your progress over time.
 
-| platform | value                                                            |                                        example |
-| :------- | ---------------------------------------------------------------- | ---------------------------------------------: |
-| Linux    | $XDG*CONFIG_HOME/\_project_path* or $HOME/.config/_project_path_ |                      /home/colby/.config/thokr |
-| macOS    | $HOME/Library/Application Support/_project_path_                 | /Users/Colby/Library/Application Support/thokr |
-| Windows  | {FOLDERID*RoamingAppData}\_project_path*\config                  |    C:\Users\Colby\AppData\Roaming\thokr\config |
+| platform | value                                             |                                         example |
+| :------- | ------------------------------------------------- | ----------------------------------------------: |
+| Linux    | `$XDG_CONFIG_HOME/thokr` or `$HOME/.config/thokr` |                       /home/colby/.config/thokr |
+| macOS    | `$HOME/Library/Application Support/thokr`         | /Users/colby/Library/Application Support/thokr  |
+| Windows  | `{FOLDERID_RoamingAppData}\thokr\config`          |     C:\Users\colby\AppData\Roaming\thokr\config |
 
 ## Roadmap
 
