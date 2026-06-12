@@ -5,11 +5,15 @@ mod util;
 
 use crate::{lang::Language, thok::Thok};
 use clap::{ArgEnum, ErrorKind, IntoApp, Parser};
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    tty::IsTty,
+use ratatui::{
+    backend::{Backend, CrosstermBackend},
+    crossterm::{
+        event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+        execute,
+        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        tty::IsTty,
+    },
+    Frame, Terminal,
 };
 use std::{
     error::Error,
@@ -17,10 +21,6 @@ use std::{
     sync::mpsc,
     thread,
     time::Duration,
-};
-use tui::{
-    backend::{Backend, CrosstermBackend},
-    Frame, Terminal,
 };
 use webbrowser::Browser;
 
@@ -149,7 +149,10 @@ enum ExitType {
 fn start_tui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: &mut App,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>>
+where
+    <B as Backend>::Error: 'static,
+{
     let should_tick = app.cli.number_of_secs.unwrap_or(0) > 0;
 
     let thok_events = get_thok_events(should_tick);
@@ -271,7 +274,8 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
 
     thread::spawn(move || loop {
         let evt = match event::read().unwrap() {
-            Event::Key(key) => Some(ThokEvent::Key(key)),
+            Event::Key(key) if key.kind == KeyEventKind::Press => Some(ThokEvent::Key(key)),
+            Event::Key(_) => None,
             Event::Resize(_, _) => Some(ThokEvent::Resize),
             _ => None,
         };
@@ -284,6 +288,6 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
     rx
 }
 
-fn ui<B: Backend>(app: &mut App, f: &mut Frame<B>) {
-    f.render_widget(&app.thok, f.size());
+fn ui(app: &mut App, f: &mut Frame) {
+    f.render_widget(&app.thok, f.area());
 }
