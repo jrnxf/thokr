@@ -152,7 +152,11 @@ impl Thok {
         } else {
             self.wpm = 0.0;
         }
-        self.accuracy = ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round();
+        self.accuracy = if self.input.is_empty() {
+            0.0
+        } else {
+            ((correct_chars.len() as f64 / self.input.len() as f64) * 100.0).round()
+        };
     }
 
     pub fn backspace(&mut self) {
@@ -376,7 +380,6 @@ mod tests {
         thok.calc_results();
         assert_eq!(thok.wpm, 0.0);
         assert_eq!(thok.std_dev, 0.0);
-        // accuracy is intentionally NOT asserted here: it is currently NaN (0/0).
-        // plan 005 changes it to 0.0.
+        assert_eq!(thok.accuracy, 0.0);
     }
 }
