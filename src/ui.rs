@@ -104,19 +104,16 @@ impl Widget for &Thok {
                 let pace = self.pace_caret_index();
 
                 // one span per prompt char (1:1 with cells). The pace cell
-                // renders as a thin magenta `▏` bar, replacing its char.
-                // The cursor cell is just a plain dim-bold char — the
-                // hardware bar cursor overlays it (set in main::ui).
+                // keeps its real character and gets a REVERSED block patched
+                // onto whatever style it already has (demo variant). The
+                // cursor cell is a plain dim-bold char — the hardware bar
+                // cursor overlays it (set in main::ui).
                 let spans = self
                     .prompt_chars
                     .iter()
                     .enumerate()
                     .map(|(idx, &expected)| {
-                        if Some(idx) == pace {
-                            return Span::styled("▏".to_owned(), magenta_style);
-                        }
-
-                        if idx < self.input.len() {
+                        let mut span = if idx < self.input.len() {
                             match self.input[idx].outcome {
                                 Outcome::Incorrect => Span::styled(
                                     if expected == ' ' {
@@ -132,7 +129,12 @@ impl Widget for &Thok {
                             }
                         } else {
                             Span::styled(expected.to_string(), dim_bold_style)
+                        };
+
+                        if Some(idx) == pace {
+                            span.style = span.style.add_modifier(Modifier::REVERSED);
                         }
+                        span
                     })
                     .collect::<Vec<Span>>();
 
