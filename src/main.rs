@@ -50,6 +50,10 @@ pub struct Cli {
     /// language to pull words from
     #[arg(short = 'l', long, value_enum, default_value_t = SupportedLanguage::English)]
     supported_language: SupportedLanguage,
+
+    /// ghost caret pacing at this WPM to race against
+    #[arg(long)]
+    pace: Option<u16>,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, strum_macros::Display)]
@@ -91,10 +95,9 @@ impl App {
 
     fn new(cli: Cli) -> Self {
         let (prompt, count) = Self::generate_prompt(&cli);
-        Self {
-            thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
-            cli,
-        }
+        let mut thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
+        thok.pace_wpm = cli.pace.map(f64::from);
+        Self { thok, cli }
     }
 
     fn reset(&mut self, new_prompt: Option<String>) {
@@ -103,6 +106,7 @@ impl App {
             None => Self::generate_prompt(&self.cli),
         };
         self.thok = Thok::new(prompt, count, self.cli.number_of_secs.map(|ns| ns as f64));
+        self.thok.pace_wpm = self.cli.pace.map(f64::from);
     }
 }
 
@@ -154,7 +158,7 @@ fn start_tui<B: Backend>(
 where
     <B as Backend>::Error: 'static,
 {
-    let should_tick = app.cli.number_of_secs.unwrap_or(0) > 0;
+    let should_tick = app.cli.number_of_secs.unwrap_or(0) > 0 || app.cli.pace.is_some();
 
     let thok_events = get_thok_events(should_tick);
 
