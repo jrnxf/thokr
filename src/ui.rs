@@ -33,6 +33,10 @@ impl Widget for &Thok {
 
         let magenta_style = Style::default().fg(Color::Magenta);
 
+        let pace_style = Style::default()
+            .fg(Color::Magenta)
+            .add_modifier(Modifier::UNDERLINED);
+
         match !self.has_finished() {
             true => {
                 let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
@@ -94,6 +98,38 @@ impl Widget for &Thok {
                         .collect::<String>(),
                     dim_bold_style,
                 ));
+
+                if let Some(p) = self.pace_caret_index() {
+                    if p < self.input.len() {
+                        // pace caret inside the already-typed region: restyle that char's span
+                        spans[p].style = spans[p].style.patch(pace_style);
+                    } else if p == self.cursor_pos {
+                        // both carets on the same char: keep user caret, add magenta
+                        let i = spans.len() - 2; // cursor span (remainder span is last)
+                        spans[i].style = spans[i].style.patch(Style::default().fg(Color::Magenta));
+                    } else {
+                        // pace caret in the untyped remainder: split the last span in three
+                        let rest_start = self.cursor_pos + 1;
+                        spans.pop(); // remove the single remainder span
+                        let chars = &self.prompt_chars;
+                        if p > rest_start {
+                            spans.push(Span::styled(
+                                chars[rest_start..p].iter().collect::<String>(),
+                                dim_bold_style,
+                            ));
+                        }
+                        spans.push(Span::styled(
+                            chars[p].to_string(),
+                            dim_bold_style.patch(pace_style),
+                        ));
+                        if p + 1 < chars.len() {
+                            spans.push(Span::styled(
+                                chars[p + 1..].iter().collect::<String>(),
+                                dim_bold_style,
+                            ));
+                        }
+                    }
+                }
 
                 let widget = Paragraph::new(Line::from(spans))
                     .alignment(if prompt_occupied_lines == 1 {
