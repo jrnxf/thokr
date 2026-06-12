@@ -35,7 +35,7 @@ impl Widget for &Thok {
 
         match !self.has_finished() {
             true => {
-                let max_chars_per_line = area.width - (HORIZONTAL_MARGIN * 2);
+                let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
                 let mut prompt_occupied_lines =
                     ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
 
