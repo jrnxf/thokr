@@ -36,6 +36,7 @@ pub struct Thok {
     pub wpm: f64,
     pub accuracy: f64,
     pub std_dev: f64,
+    pub pace_wpm: Option<f64>,
 }
 
 impl Thok {
@@ -55,12 +56,33 @@ impl Thok {
             wpm: 0.0,
             accuracy: 0.0,
             std_dev: 0.0,
+            pace_wpm: None,
         }
     }
 
+    /// Index of the pace caret after `elapsed_secs`, or None if pacing is
+    /// off or the pace caret has run past the end of the prompt.
+    pub fn pace_caret_index_at(&self, elapsed_secs: f64) -> Option<usize> {
+        let wpm = self.pace_wpm?;
+        let idx = (elapsed_secs * wpm * 5.0 / 60.0).floor() as usize;
+        if idx >= self.char_count() {
+            None
+        } else {
+            Some(idx)
+        }
+    }
+
+    /// Pace caret position now; None before the test starts.
+    pub fn pace_caret_index(&self) -> Option<usize> {
+        let started_at = self.started_at?;
+        let elapsed = started_at.elapsed().ok()?.as_secs_f64();
+        self.pace_caret_index_at(elapsed)
+    }
+
     pub fn on_tick(&mut self) {
-        self.seconds_remaining =
-            Some(self.seconds_remaining.unwrap() - (TICK_RATE_MS as f64 / 1000_f64));
+        if let Some(remaining) = self.seconds_remaining {
+            self.seconds_remaining = Some(remaining - (TICK_RATE_MS as f64 / 1000_f64));
+        }
     }
 
     pub fn char_count(&self) -> usize {
@@ -370,6 +392,45 @@ mod tests {
         assert!(last_x >= 2.0);
         assert!(last_x < 60.0);
         assert!(thok.wpm > 0.0);
+    }
+
+    #[test]
+    fn pace_index_advances_linearly() {
+        let mut thok = Thok::new("abcdefghijklmnopqrstuvwxyz".to_string(), 1, None);
+        thok.pace_wpm = Some(60.0);
+        assert_eq!(thok.pace_caret_index_at(0.0), Some(0));
+        assert_eq!(thok.pace_caret_index_at(1.0), Some(5));
+        assert_eq!(thok.pace_caret_index_at(2.5), Some(12));
+    }
+
+    #[test]
+    fn pace_index_none_when_finished() {
+        let mut thok = Thok::new("abcdefghijklmnopqrstuvwxyz".to_string(), 1, None);
+        thok.pace_wpm = Some(60.0);
+        assert_eq!(thok.pace_caret_index_at(1000.0), None);
+    }
+
+    #[test]
+    fn pace_index_none_when_off() {
+        let thok = Thok::new("abcdefghijklmnopqrstuvwxyz".to_string(), 1, None);
+        assert_eq!(thok.pace_caret_index_at(1.0), None);
+    }
+
+    #[test]
+    fn pace_index_none_before_start() {
+        let mut thok = Thok::new("abcdefghijklmnopqrstuvwxyz".to_string(), 1, None);
+        thok.pace_wpm = Some(60.0);
+        thok.started_at = None;
+        assert_eq!(thok.pace_caret_index(), None);
+    }
+
+    #[test]
+    fn tick_without_timer_is_noop() {
+        let mut thok = Thok::new("abc".to_string(), 1, None);
+        assert_eq!(thok.number_of_secs, None);
+        thok.on_tick();
+        assert_eq!(thok.seconds_remaining, None);
+        assert!(!thok.has_finished());
     }
 
     #[test]
