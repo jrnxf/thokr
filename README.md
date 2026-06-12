@@ -32,35 +32,27 @@ Install `thokr-git` from the AUR
 For detailed usage run `thokr -h`.
 
 ```
-thokr 0.4.1
 sleek typing tui with visualized results and historical logging
 
-USAGE:
-    thokr [OPTIONS]
+Usage: thokr [OPTIONS]
 
-OPTIONS:
-    -f, --full-sentences <NUMBER_OF_SENTENCES>
-            number of sentences to use in test
-
-    -h, --help
-            Print help information
-
-    -l, --supported-language <SUPPORTED_LANGUAGE>
-            language to pull words from [default: english] [possible values: english, english1k,
-            english10k]
-
-    -p, --prompt <PROMPT>
-            custom prompt to use
-
-    -s, --number-of-secs <NUMBER_OF_SECS>
-            number of seconds to run test
-
-    -V, --version
-            Print version information
-
-    -w, --number-of-words <NUMBER_OF_WORDS>
-            number of words to use in test [default: 15]
-
+Options:
+  -w, --number-of-words <NUMBER_OF_WORDS>
+          number of words to use in test [default: 15]
+  -f, --full-sentences <NUMBER_OF_SENTENCES>
+          number of sentences to use in test
+  -s, --number-of-secs <NUMBER_OF_SECS>
+          number of seconds to run test
+  -p, --prompt <PROMPT>
+          custom prompt to use
+  -l, --supported-language <SUPPORTED_LANGUAGE>
+          language to pull words from [default: english] [possible values: english, english1k, english10k]
+      --pace <PACE>
+          ghost caret pacing at this WPM to race against
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 
@@ -74,6 +66,7 @@ OPTIONS:
 | `thokr -w 10 -s 5`          | 10 of the 200 most common English words (hard stop at 5 seconds) |
 | `thokr -p "$(cat foo.txt)"` |                   custom prompt with the output of `cat foo.txt` |
 | `thokr -f 4`                | 4 grammatical sentences with full stops; overrides word settings |
+| `thokr --pace 60`           |         15 most common words with a ghost caret racing at 60 wpm |
 
 _During a test you can press ← to start over or → to see a new prompt (assuming
 you didn't supply a custom one)_
