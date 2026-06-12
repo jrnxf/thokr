@@ -233,3 +233,107 @@ impl Thok {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// Builds a finished-by-length thok: every char of `typed` written against
+    /// `prompt`, with the i-th keystroke stamped at started_at + offsets[i].
+    fn thok_with_input(prompt: &str, typed: &str, offsets_ms: &[u64]) -> Thok {
+        let mut thok = Thok::new(prompt.to_string(), prompt.split(' ').count(), None);
+        let started_at = SystemTime::now() - Duration::from_secs(60);
+        thok.started_at = Some(started_at);
+        for (i, c) in typed.chars().enumerate() {
+            let outcome = if c == prompt.chars().nth(i).unwrap() {
+                Outcome::Correct
+            } else {
+                Outcome::Incorrect
+            };
+            thok.input.push(Input {
+                char: c,
+                outcome,
+                timestamp: started_at + Duration::from_millis(offsets_ms[i]),
+            });
+            thok.cursor_pos += 1;
+        }
+        thok
+    }
+
+    #[test]
+    fn write_records_correct_and_incorrect() {
+        let mut thok = Thok::new("hi".to_string(), 1, None);
+        thok.write('h');
+        thok.write('x');
+        assert_eq!(thok.input[0].outcome, Outcome::Correct);
+        assert_eq!(thok.input[1].outcome, Outcome::Incorrect);
+        assert_eq!(thok.cursor_pos, 2);
+        assert!(thok.has_started());
+    }
+
+    #[test]
+    fn backspace_removes_last_input() {
+        let mut thok = Thok::new("hi".to_string(), 1, None);
+        thok.write('h');
+        thok.write('x');
+        thok.backspace();
+        assert_eq!(thok.input.len(), 1);
+        assert_eq!(thok.cursor_pos, 1);
+
+        // backspace with no input must not panic and leaves cursor at 0
+        let mut empty = Thok::new("hi".to_string(), 1, None);
+        empty.backspace();
+        assert_eq!(empty.cursor_pos, 0);
+    }
+
+    #[test]
+    fn has_finished_by_length() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.write('a');
+        assert!(!thok.has_finished());
+        thok.write('b');
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn has_finished_by_timer() {
+        let mut thok = Thok::new("abc".to_string(), 1, Some(0.3));
+        thok.write('a');
+        assert!(!thok.has_finished());
+        // each tick subtracts TICK_RATE_MS (100ms = 0.1s)
+        thok.on_tick();
+        thok.on_tick();
+        thok.on_tick();
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn calc_results_accuracy() {
+        let mut thok = thok_with_input("hello", "hellx", &[100, 300, 500, 700, 900]);
+        thok.calc_results();
+        // 4 of 5 correct => 80%
+        assert_eq!(thok.accuracy, 80.0);
+    }
+
+    #[test]
+    fn calc_results_wpm_all_correct() {
+        let mut thok = thok_with_input("hello", "hello", &[200, 400, 600, 800, 950]);
+        thok.calc_results();
+        // all 5 offsets are under 1s so they clamp to bucket 1.0:
+        // cumulative 5 chars => (60/1)*5/5 = 60, ceiled
+        assert_eq!(thok.wpm, 60.0);
+        assert_eq!(thok.wpm_coords.len(), 1);
+    }
+
+    #[test]
+    fn calc_results_empty_input_does_not_panic() {
+        let mut thok = Thok::new("hello".to_string(), 1, None);
+        thok.started_at = Some(SystemTime::now() - Duration::from_secs(60));
+        thok.calc_results();
+        assert_eq!(thok.wpm, 0.0);
+        assert_eq!(thok.std_dev, 0.0);
+        // accuracy is intentionally NOT asserted here: it is currently NaN (0/0).
+        // plan 005 changes it to 0.0.
+    }
+}
