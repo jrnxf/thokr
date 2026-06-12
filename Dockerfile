@@ -1,21 +1,16 @@
-FROM rust:latest as builder
+FROM rust:slim-bookworm AS builder
 
-RUN USER=root
-
-RUN mkdir thokr
 WORKDIR /thokr
-
-
-RUN rustup target add x86_64-unknown-linux-musl 
-RUN apt update 
-RUN apt -y install musl-tools musl-dev build-essential gcc-x86-64-linux-gnu
 
 COPY . ./
 
-ENV RUSTFLAGS='-C linker=x86_64-linux-gnu-gcc'
-RUN cargo build --target x86_64-unknown-linux-musl --release
+# Build a normal glibc release binary for the NATIVE arch (amd64 in CI, arm64
+# locally). No cross toolchain, no musl: bookworm's glibc matches the runtime
+# stage (debian:bookworm-slim), so the dynamically linked binary is compatible.
+RUN cargo build --release \
+    && cp target/release/thokr /thokr/thokr-bin
 
-FROM debian:buster-slim
+FROM debian:bookworm-slim
 
 ARG APP=/usr/src/app
 
@@ -25,8 +20,7 @@ RUN groupadd $APP_USER \
     && useradd -g $APP_USER $APP_USER \
     && mkdir -p ${APP}
 
-# Copy the compiled binaries into the new container.
-COPY --from=builder /thokr/target/x86_64-unknown-linux-musl/release/thokr ${APP}/thokr
+COPY --from=builder /thokr/thokr-bin ${APP}/thokr
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
 USER $APP_USER
