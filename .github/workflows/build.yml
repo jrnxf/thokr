@@ -38,8 +38,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      # TODO(plan 007): add `-- -D warnings` once the 5 existing warnings are fixed
-      - run: cargo clippy --all-features
+      - run: cargo clippy --all-features -- -D warnings
 
   test:
     name: test
