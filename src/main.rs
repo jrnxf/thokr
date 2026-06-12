@@ -10,6 +10,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
+        cursor::SetCursorStyle,
         event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -114,7 +115,11 @@ impl App {
 /// Best-effort terminal restore; used on panic and on exit.
 fn restore_terminal() {
     let _ = disable_raw_mode();
-    let _ = execute!(io::stdout(), LeaveAlternateScreen);
+    let _ = execute!(
+        io::stdout(),
+        SetCursorStyle::DefaultUserShape,
+        LeaveAlternateScreen
+    );
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -134,7 +139,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     enable_raw_mode()?;
 
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, SetCursorStyle::SteadyBar)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -296,4 +301,7 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
 
 fn ui(app: &mut App, f: &mut Frame) {
     f.render_widget(&app.thok, f.area());
+    if let Some(pos) = ui::cursor_screen_position(&app.thok, f.area()) {
+        f.set_cursor_position(pos);
+    }
 }

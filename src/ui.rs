@@ -1,17 +1,85 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget, Wrap},
+    widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
 };
-use unicode_width::UnicodeWidthStr;
 use webbrowser::Browser;
 
+use crate::layout;
 use crate::thok::{Outcome, Thok};
 
 const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
+
+/// Shared geometry for the running view, so the renderer and the hardware
+/// cursor math cannot drift. Returns the per-line max width, the wrapped
+/// line ranges (1:1 char↔cell), and the 4-chunk vertical layout.
+struct RunningGeometry {
+    max_chars_per_line: u16,
+    lines: Vec<std::ops::Range<usize>>,
+    chunks: std::rc::Rc<[Rect]>,
+}
+
+fn running_geometry(thok: &Thok, area: Rect) -> RunningGeometry {
+    let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
+    let lines = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
+    let prompt_occupied_lines = lines.len() as u16;
+
+    let time_left_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .horizontal_margin(HORIZONTAL_MARGIN)
+        .constraints(
+            [
+                Constraint::Length(
+                    ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
+                ),
+                Constraint::Length(time_left_lines),
+                Constraint::Length(prompt_occupied_lines),
+                Constraint::Length(
+                    ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
+                ),
+            ]
+            .as_ref(),
+        )
+        .split(area);
+
+    RunningGeometry {
+        max_chars_per_line,
+        lines,
+        chunks,
+    }
+}
+
+/// Screen cell for the hardware cursor while a test is running.
+/// `None` when the test has finished (the results screen has no cursor).
+pub fn cursor_screen_position(thok: &Thok, area: Rect) -> Option<Position> {
+    if thok.has_finished() {
+        return None;
+    }
+
+    let geo = running_geometry(thok, area);
+    let prompt_chunk = geo.chunks[2];
+
+    let (line_no, col) =
+        layout::char_cell(&thok.prompt_chars, geo.max_chars_per_line, thok.cursor_pos)?;
+
+    let line_len = geo.lines.get(line_no).map(|r| r.end - r.start).unwrap_or(0) as u16;
+
+    // alignment matches the renderer: center only when the prompt is one line
+    let x_offset = if geo.lines.len() == 1 {
+        (prompt_chunk.width.saturating_sub(line_len)) / 2
+    } else {
+        0
+    };
+
+    let x = prompt_chunk.x + x_offset + col;
+    let y = prompt_chunk.y + line_no as u16;
+    Some(Position::new(x, y))
+}
 
 impl Widget for &Thok {
     fn render(self, area: Rect, buf: &mut Buffer) {
@@ -25,121 +93,63 @@ impl Widget for &Thok {
             .patch(bold_style)
             .add_modifier(Modifier::DIM);
 
-        let underlined_dim_bold_style = Style::default()
-            .patch(dim_bold_style)
-            .add_modifier(Modifier::UNDERLINED);
-
         let italic_style = Style::default().add_modifier(Modifier::ITALIC);
 
         let magenta_style = Style::default().fg(Color::Magenta);
 
-        let pace_style = Style::default()
-            .fg(Color::Magenta)
-            .add_modifier(Modifier::UNDERLINED);
-
         match !self.has_finished() {
             true => {
-                let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
-                let mut prompt_occupied_lines =
-                    ((self.prompt.width() as f64 / max_chars_per_line as f64).ceil() + 1.0) as u16;
+                let geo = running_geometry(self, area);
+                let chunks = geo.chunks;
+                let pace = self.pace_caret_index();
 
-                let time_left_lines = if self.number_of_secs.is_some() { 2 } else { 0 };
-
-                if self.prompt.width() <= max_chars_per_line as usize {
-                    prompt_occupied_lines = 1;
-                }
-
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .horizontal_margin(HORIZONTAL_MARGIN)
-                    .constraints(
-                        [
-                            Constraint::Length(
-                                ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
-                            ),
-                            Constraint::Length(time_left_lines),
-                            Constraint::Length(prompt_occupied_lines),
-                            Constraint::Length(
-                                ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
-                            ),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(area);
-
-                let mut spans = self
-                    .input
+                // one span per prompt char (1:1 with cells). The pace cell
+                // renders as a thin magenta `▏` bar, replacing its char.
+                // The cursor cell is just a plain dim-bold char — the
+                // hardware bar cursor overlays it (set in main::ui).
+                let spans = self
+                    .prompt_chars
                     .iter()
                     .enumerate()
-                    .map(|(idx, input)| {
-                        let expected = self.get_expected_char(idx).to_string();
+                    .map(|(idx, &expected)| {
+                        if Some(idx) == pace {
+                            return Span::styled("▏".to_owned(), magenta_style);
+                        }
 
-                        match input.outcome {
-                            Outcome::Incorrect => Span::styled(
-                                match expected.as_str() {
-                                    " " => "·".to_owned(),
-                                    _ => expected,
-                                },
-                                red_bold_style,
-                            ),
-                            Outcome::Correct => Span::styled(expected, green_bold_style),
+                        if idx < self.input.len() {
+                            match self.input[idx].outcome {
+                                Outcome::Incorrect => Span::styled(
+                                    if expected == ' ' {
+                                        "·".to_owned()
+                                    } else {
+                                        expected.to_string()
+                                    },
+                                    red_bold_style,
+                                ),
+                                Outcome::Correct => {
+                                    Span::styled(expected.to_string(), green_bold_style)
+                                }
+                            }
+                        } else {
+                            Span::styled(expected.to_string(), dim_bold_style)
                         }
                     })
                     .collect::<Vec<Span>>();
 
-                spans.push(Span::styled(
-                    self.get_expected_char(self.cursor_pos).to_string(),
-                    underlined_dim_bold_style,
-                ));
+                // chunk the flat span list into lines using the wrap ranges
+                let text_lines = geo
+                    .lines
+                    .iter()
+                    .map(|r| Line::from(spans[r.clone()].to_vec()))
+                    .collect::<Vec<Line>>();
 
-                spans.push(Span::styled(
-                    self.prompt_chars[(self.cursor_pos + 1).min(self.prompt_chars.len())..]
-                        .iter()
-                        .collect::<String>(),
-                    dim_bold_style,
-                ));
-
-                if let Some(p) = self.pace_caret_index() {
-                    if p < self.input.len() {
-                        // pace caret inside the already-typed region: restyle that char's span
-                        spans[p].style = spans[p].style.patch(pace_style);
-                    } else if p == self.cursor_pos {
-                        // both carets on the same char: keep user caret, add magenta
-                        let i = spans.len() - 2; // cursor span (remainder span is last)
-                        spans[i].style = spans[i].style.patch(Style::default().fg(Color::Magenta));
-                    } else {
-                        // pace caret in the untyped remainder: split the last span in three
-                        let rest_start = self.cursor_pos + 1;
-                        spans.pop(); // remove the single remainder span
-                        let chars = &self.prompt_chars;
-                        if p > rest_start {
-                            spans.push(Span::styled(
-                                chars[rest_start..p].iter().collect::<String>(),
-                                dim_bold_style,
-                            ));
-                        }
-                        spans.push(Span::styled(
-                            chars[p].to_string(),
-                            dim_bold_style.patch(pace_style),
-                        ));
-                        if p + 1 < chars.len() {
-                            spans.push(Span::styled(
-                                chars[p + 1..].iter().collect::<String>(),
-                                dim_bold_style,
-                            ));
-                        }
-                    }
-                }
-
-                let widget = Paragraph::new(Line::from(spans))
-                    .alignment(if prompt_occupied_lines == 1 {
-                        // when the prompt is small enough to fit on one line
-                        // centering the text gives a nice zen feeling
-                        Alignment::Center
-                    } else {
-                        Alignment::Left
-                    })
-                    .wrap(Wrap { trim: true });
+                let widget = Paragraph::new(text_lines).alignment(if geo.lines.len() == 1 {
+                    // when the prompt is small enough to fit on one line
+                    // centering the text gives a nice zen feeling
+                    Alignment::Center
+                } else {
+                    Alignment::Left
+                });
 
                 widget.render(chunks[2], buf);
 
