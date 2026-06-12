@@ -66,71 +66,42 @@ impl SupportedLanguage {
 
 #[derive(Debug)]
 struct App {
-    cli: Option<Cli>,
+    cli: Cli,
     thok: Thok,
 }
 
 impl App {
-    fn new(cli: Cli) -> Self {
-        let mut count = 0;
-        let prompt = if cli.prompt.is_some() {
-            cli.prompt.clone().unwrap()
-        } else if cli.number_of_sentences.is_some() {
+    /// (prompt, word_count) per the CLI flags.
+    fn generate_prompt(cli: &Cli) -> (String, usize) {
+        if let Some(p) = &cli.prompt {
+            (p.clone(), cli.number_of_words)
+        } else if let Some(n) = cli.number_of_sentences {
             let language = cli.supported_language.as_lang();
-            let (s, count_tmp) = language.get_random_sentence(cli.number_of_sentences.unwrap());
-            count = count_tmp;
-            // sets the word count for the sentence.
-            s.join("")
+            let (s, count) = language.get_random_sentence(n);
+            (s.join(""), count)
         } else {
             let language = cli.supported_language.as_lang();
+            (
+                language.get_random(cli.number_of_words).join(" "),
+                cli.number_of_words,
+            )
+        }
+    }
 
-            language.get_random(cli.number_of_words).join(" ")
-        };
-        if cli.number_of_sentences.is_some() {
-            Self {
-                thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
-                cli: Some(cli),
-            }
-        } else {
-            Self {
-                thok: Thok::new(
-                    prompt,
-                    cli.number_of_words,
-                    cli.number_of_secs.map(|ns| ns as f64),
-                ),
-                cli: Some(cli),
-            }
+    fn new(cli: Cli) -> Self {
+        let (prompt, count) = Self::generate_prompt(&cli);
+        Self {
+            thok: Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64)),
+            cli,
         }
     }
 
     fn reset(&mut self, new_prompt: Option<String>) {
-        let cli = self.cli.clone().unwrap();
-        let mut count = 0;
-        let prompt = match new_prompt {
-            Some(_) => new_prompt.unwrap(),
-            _ => match cli.number_of_sentences {
-                Some(t) => {
-                    let language = cli.supported_language.as_lang();
-                    let (s, count_tmp) = language.get_random_sentence(t);
-                    count = count_tmp;
-                    // sets the word count for the sentence
-                    s.join("")
-                }
-                _ => {
-                    let language = cli.supported_language.as_lang();
-                    language.get_random(cli.number_of_words).join(" ")
-                }
-            },
+        let (prompt, count) = match new_prompt {
+            Some(p) => (p, self.thok.number_of_words),
+            None => Self::generate_prompt(&self.cli),
         };
-        if cli.number_of_sentences.is_some() {
-            self.thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
-        } else {
-            self.thok = Thok::new(
-                prompt,
-                cli.number_of_words,
-                cli.number_of_secs.map(|ns| ns as f64),
-            );
-        }
+        self.thok = Thok::new(prompt, count, self.cli.number_of_secs.map(|ns| ns as f64));
     }
 }
 
@@ -168,9 +139,7 @@ fn start_tui<B: Backend>(
     terminal: &mut Terminal<B>,
     mut app: &mut App,
 ) -> Result<(), Box<dyn Error>> {
-    let cli = app.cli.clone();
-
-    let should_tick = cli.unwrap().number_of_secs.unwrap_or(0) > 0;
+    let should_tick = app.cli.number_of_secs.unwrap_or(0) > 0;
 
     let thok_events = get_thok_events(should_tick);
 
