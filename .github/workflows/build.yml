@@ -14,56 +14,38 @@ jobs:
     name: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check
 
   fmt:
+    name: fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
-
-      - run: rustup component add rustfmt
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
   lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy
-          override: true
-
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
+      - uses: Swatinem/rust-cache@v2
+      # TODO(plan 007): add `-- -D warnings` once the 5 existing warnings are fixed
+      - run: cargo clippy --all-features
 
   test:
+    name: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all
