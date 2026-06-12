@@ -107,12 +107,9 @@ impl Widget for &Thok {
 
                 widget.render(chunks[2], buf);
 
-                if self.seconds_remaining.is_some() {
-                    let timer = Paragraph::new(Span::styled(
-                        format!("{:.1}", self.seconds_remaining.unwrap()),
-                        dim_bold_style,
-                    ))
-                    .alignment(Alignment::Center);
+                if let Some(sr) = self.seconds_remaining {
+                    let timer = Paragraph::new(Span::styled(format!("{:.1}", sr), dim_bold_style))
+                        .alignment(Alignment::Center);
 
                     timer.render(chunks[1], buf);
                 }
@@ -137,7 +134,7 @@ impl Widget for &Thok {
 
                 for ts in &self.wpm_coords {
                     if ts.1 > highest_wpm {
-                        highest_wpm = ts.1 as f64;
+                        highest_wpm = ts.1;
                     }
                 }
 

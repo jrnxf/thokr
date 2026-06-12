@@ -170,10 +170,8 @@ fn start_tui<B: Backend>(
                         KeyCode::Esc => {
                             break;
                         }
-                        KeyCode::Backspace => {
-                            if !app.thok.has_finished() {
-                                app.thok.backspace();
-                            }
+                        KeyCode::Backspace if !app.thok.has_finished() => {
+                            app.thok.backspace();
                         }
                         KeyCode::Left => {
                             exit_type = ExitType::Restart;
@@ -200,11 +198,9 @@ fn start_tui<B: Backend>(
                                     }
                                 }
                                 true => match key.code {
-                                    KeyCode::Char('t') => {
-                                        if Browser::is_available() {
-                                            webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fthatvegandev%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
+                                    KeyCode::Char('t') if Browser::is_available() => {
+                                        webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fthatvegandev%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
                                     .unwrap_or_default();
-                                        }
                                     }
                                     KeyCode::Char('r') => {
                                         exit_type = ExitType::Restart;

@@ -213,7 +213,6 @@ impl Thok {
             let needs_header = !log_path.exists();
 
             let mut log_file = OpenOptions::new()
-                .write(true)
                 .append(true)
                 .create(true)
                 .open(log_path)?;
