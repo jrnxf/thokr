@@ -54,6 +54,14 @@ fn running_geometry(thok: &Thok, area: Rect) -> RunningGeometry {
     }
 }
 
+/// Upper bound for the results graph's wpm axis. It must reach at least the
+/// tallest data point: rounding to nearest could land *below* a peak whose
+/// fraction is under 0.5 and clip the line (issue #22), so ceil, and keep a
+/// minimum height of 1 so the axis never collapses.
+fn results_y_max(highest_wpm: f64) -> f64 {
+    highest_wpm.ceil().max(1.0)
+}
+
 /// Screen cell for the hardware cursor while a test is running.
 /// `None` when the test has finished (the results screen has no cursor).
 pub fn cursor_screen_position(thok: &Thok, area: Rect) -> Option<Position> {
@@ -186,6 +194,8 @@ impl Widget for &Thok {
                     }
                 }
 
+                let y_max = results_y_max(highest_wpm);
+
                 let datasets = vec![Dataset::default()
                     .marker(ratatui::symbols::Marker::Braille)
                     .style(magenta_style)
@@ -216,10 +226,10 @@ impl Widget for &Thok {
                     .y_axis(
                         Axis::default()
                             .title("wpm")
-                            .bounds([0.0, highest_wpm.round()])
+                            .bounds([0.0, y_max])
                             .labels(vec![
                                 Span::styled("0", bold_style),
-                                Span::styled(format!("{}", highest_wpm.round()), bold_style),
+                                Span::styled(format!("{}", y_max), bold_style),
                             ]),
                     );
 
@@ -248,5 +258,22 @@ impl Widget for &Thok {
                 legend.render(chunks[3], buf);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn y_max_does_not_clip_a_peak() {
+        // the bug: round() drops below a peak like 94.4 and clips it.
+        assert!(results_y_max(94.4) >= 94.4);
+        assert_eq!(results_y_max(94.4), 95.0);
+        // exact integers stay put
+        assert_eq!(results_y_max(60.0), 60.0);
+        // never collapses to a zero-height axis
+        assert_eq!(results_y_max(0.0), 1.0);
+        assert_eq!(results_y_max(0.3), 1.0);
     }
 }
