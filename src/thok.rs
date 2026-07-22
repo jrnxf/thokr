@@ -37,6 +37,8 @@ pub struct Thok {
     pub accuracy: f64,
     pub std_dev: f64,
     pub pace_wpm: Option<f64>,
+    /// End the test the instant an incorrect character is typed.
+    pub death_mode: bool,
 }
 
 impl Thok {
@@ -57,6 +59,7 @@ impl Thok {
             accuracy: 0.0,
             std_dev: 0.0,
             pace_wpm: None,
+            death_mode: false,
         }
     }
 
@@ -220,6 +223,12 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
+        // death mode ends the test on the first mistake, ahead of the usual
+        // length/timer rules (even a running timer).
+        if self.death_mode && self.input.iter().any(|i| i.outcome == Outcome::Incorrect) {
+            return true;
+        }
+
         (self.input.len() == self.char_count())
             || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
     }
@@ -337,6 +346,32 @@ mod tests {
         thok.on_tick();
         thok.on_tick();
         thok.on_tick();
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn death_mode_finishes_on_first_mistake() {
+        let mut thok = Thok::new("hello world".to_string(), 2, None);
+        thok.death_mode = true;
+        thok.write('h');
+        thok.write('e');
+        assert!(!thok.has_finished(), "correct typing keeps the test alive");
+        thok.write('x'); // expected 'l'
+        assert!(thok.has_finished(), "a mistake ends a death-mode test");
+    }
+
+    #[test]
+    fn death_mode_off_tolerates_mistakes() {
+        let mut thok = Thok::new("hello".to_string(), 1, None);
+        thok.write('x');
+        assert!(!thok.has_finished());
+    }
+
+    #[test]
+    fn death_mode_beats_a_running_timer() {
+        let mut thok = Thok::new("hello".to_string(), 1, Some(10.0));
+        thok.death_mode = true;
+        thok.write('x');
         assert!(thok.has_finished());
     }
 

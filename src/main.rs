@@ -56,6 +56,10 @@ pub struct Cli {
     /// ghost caret pacing at this WPM to race against
     #[arg(long)]
     pace: Option<u16>,
+
+    /// end the test the moment you mistype a character
+    #[arg(short = 'd', long = "death-mode")]
+    death_mode: bool,
 }
 
 #[derive(Debug, Copy, Clone, ValueEnum, strum_macros::Display)]
@@ -99,6 +103,7 @@ impl App {
         let (prompt, count) = Self::generate_prompt(&cli);
         let mut thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
         thok.pace_wpm = cli.pace.map(f64::from);
+        thok.death_mode = cli.death_mode;
         Self { thok, cli }
     }
 
@@ -109,6 +114,7 @@ impl App {
         };
         self.thok = Thok::new(prompt, count, self.cli.number_of_secs.map(|ns| ns as f64));
         self.thok.pace_wpm = self.cli.pace.map(f64::from);
+        self.thok.death_mode = self.cli.death_mode;
     }
 }
 
