@@ -13,19 +13,45 @@ use crate::thok::{Outcome, Thok};
 const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
 
+/// Most prompt lines shown at once in the running view. Continuous (timed)
+/// tests grow the prompt without bound, so the view scrolls a fixed window
+/// instead of expanding to fit — keeping the layout centered and stable.
+const MAX_VISIBLE_LINES: usize = 3;
+
+/// Once scrolling, keep this many completed lines above the cursor line so it
+/// sits comfortably in the window rather than pinned to the top edge.
+const WINDOW_LEAD: usize = 1;
+
 /// Shared geometry for the running view, so the renderer and the hardware
 /// cursor math cannot drift. Returns the per-line max width, the wrapped
-/// line ranges (1:1 char↔cell), and the 4-chunk vertical layout.
+/// line ranges (1:1 char↔cell), the scrolled window into those lines, and
+/// the 4-chunk vertical layout.
 struct RunningGeometry {
     max_chars_per_line: u16,
     lines: Vec<std::ops::Range<usize>>,
+    /// index of the first visible line within `lines`
+    window_start: usize,
+    /// number of lines actually shown (== visible range length)
+    visible_count: usize,
     chunks: std::rc::Rc<[Rect]>,
 }
 
 fn running_geometry(thok: &Thok, area: Rect) -> RunningGeometry {
     let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
     let lines = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
-    let prompt_occupied_lines = lines.len() as u16;
+
+    // line the cursor currently sits on; falls back to the last line when the
+    // cursor is at the very end of the prompt (idx == len has no cell).
+    let cursor_line = lines
+        .iter()
+        .position(|r| thok.cursor_pos >= r.start && thok.cursor_pos < r.end)
+        .unwrap_or_else(|| lines.len().saturating_sub(1));
+
+    let visible_count = lines.len().min(MAX_VISIBLE_LINES);
+    let max_start = lines.len() - visible_count;
+    let window_start = cursor_line.saturating_sub(WINDOW_LEAD).min(max_start);
+
+    let prompt_occupied_lines = visible_count as u16;
 
     let time_left_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
 
@@ -50,6 +76,8 @@ fn running_geometry(thok: &Thok, area: Rect) -> RunningGeometry {
     RunningGeometry {
         max_chars_per_line,
         lines,
+        window_start,
+        visible_count,
         chunks,
     }
 }
@@ -67,6 +95,12 @@ pub fn cursor_screen_position(thok: &Thok, area: Rect) -> Option<Position> {
     let (line_no, col) =
         layout::char_cell(&thok.prompt_chars, geo.max_chars_per_line, thok.cursor_pos)?;
 
+    // cursor scrolled above the window (shouldn't happen: the window is
+    // anchored to the cursor line) — nothing to draw.
+    if line_no < geo.window_start || line_no >= geo.window_start + geo.visible_count {
+        return None;
+    }
+
     let line_len = geo.lines.get(line_no).map(|r| r.end - r.start).unwrap_or(0) as u16;
 
     // alignment matches the renderer: center only when the prompt is one line
@@ -77,7 +111,7 @@ pub fn cursor_screen_position(thok: &Thok, area: Rect) -> Option<Position> {
     };
 
     let x = prompt_chunk.x + x_offset + col;
-    let y = prompt_chunk.y + line_no as u16;
+    let y = prompt_chunk.y + (line_no - geo.window_start) as u16;
     Some(Position::new(x, y))
 }
 
@@ -138,9 +172,11 @@ impl Widget for &Thok {
                     })
                     .collect::<Vec<Span>>();
 
-                // chunk the flat span list into lines using the wrap ranges
-                let text_lines = geo
-                    .lines
+                // chunk the flat span list into lines using the wrap ranges,
+                // showing only the scrolled window (all lines when the prompt
+                // already fits within MAX_VISIBLE_LINES).
+                let visible = geo.window_start..(geo.window_start + geo.visible_count);
+                let text_lines = geo.lines[visible]
                     .iter()
                     .map(|r| Line::from(spans[r.clone()].to_vec()))
                     .collect::<Vec<Line>>();
