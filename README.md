@@ -49,6 +49,8 @@ Options:
           language to pull words from [default: english] [possible values: english, english1k, english10k]
       --pace <PACE>
           ghost caret pacing at this WPM to race against
+  -d, --death-mode
+          end the test the moment you mistype a character
   -h, --help
           Print help
   -V, --version
@@ -67,6 +69,7 @@ Options:
 | `thokr -p "$(cat foo.txt)"` |                   custom prompt with the output of `cat foo.txt` |
 | `thokr -f 4`                | 4 grammatical sentences with full stops; overrides word settings |
 | `thokr --pace 60`           |         15 most common words with a ghost caret racing at 60 wpm |
+| `thokr -d`                  |    15 words, but the test ends the instant you mistype a character |
 
 _During a test you can press ← to start over or → to see a new prompt (assuming
 you didn't supply a custom one)_
