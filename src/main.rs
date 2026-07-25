@@ -33,7 +33,7 @@ const TICK_RATE_MS: u64 = 100;
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// number of words to use in test
+    /// number of words to use in test (initial buffer only when timed)
     #[arg(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
@@ -41,7 +41,8 @@ pub struct Cli {
     #[arg(short = 'f', long = "full-sentences")]
     number_of_sentences: Option<usize>,
 
-    /// number of seconds to run test
+    /// run a timed test for this many seconds; words stream continuously until
+    /// the clock stops (unless -p or -f fixes the text)
     #[arg(short = 's', long)]
     number_of_secs: Option<usize>,
 
@@ -78,6 +79,13 @@ struct App {
 }
 
 impl App {
+    /// Continuous (timed) mode streams fresh words until the clock stops. It
+    /// applies only to the default word mode with `-s`; a custom prompt or
+    /// sentence mode is finite text, so it always ends at its own length.
+    fn is_continuous(cli: &Cli) -> bool {
+        cli.number_of_secs.is_some() && cli.prompt.is_none() && cli.number_of_sentences.is_none()
+    }
+
     /// (prompt, word_count) per the CLI flags.
     fn generate_prompt(cli: &Cli) -> (String, usize) {
         if let Some(p) = &cli.prompt {
@@ -95,10 +103,20 @@ impl App {
         }
     }
 
-    fn new(cli: Cli) -> Self {
-        let (prompt, count) = Self::generate_prompt(&cli);
+    /// Build a fresh `Thok` for `cli`, wiring up pacing and — in continuous
+    /// mode — the refill word pool that keeps the prompt topped up.
+    fn build_thok(cli: &Cli, prompt: String, count: usize) -> Thok {
         let mut thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
         thok.pace_wpm = cli.pace.map(f64::from);
+        if Self::is_continuous(cli) {
+            thok.refill_words = cli.supported_language.as_lang().word_pool();
+        }
+        thok
+    }
+
+    fn new(cli: Cli) -> Self {
+        let (prompt, count) = Self::generate_prompt(&cli);
+        let thok = Self::build_thok(&cli, prompt, count);
         Self { thok, cli }
     }
 
@@ -107,8 +125,7 @@ impl App {
             Some(p) => (p, self.thok.number_of_words),
             None => Self::generate_prompt(&self.cli),
         };
-        self.thok = Thok::new(prompt, count, self.cli.number_of_secs.map(|ns| ns as f64));
-        self.thok.pace_wpm = self.cli.pace.map(f64::from);
+        self.thok = Self::build_thok(&self.cli, prompt, count);
     }
 }
 

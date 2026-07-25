@@ -50,6 +50,11 @@ impl Language {
 
         self.words.choose_multiple(&mut rng, num).cloned().collect()
     }
+
+    /// The full word list, used to seed continuous (timed) mode refills.
+    pub fn word_pool(&self) -> Vec<String> {
+        self.words.clone()
+    }
 }
 
 fn read_language_from_file(file_name: String) -> Result<Language, Box<dyn Error>> {

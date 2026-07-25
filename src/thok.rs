@@ -3,9 +3,17 @@ use crate::TICK_RATE_MS;
 use chrono::prelude::*;
 use directories::ProjectDirs;
 use itertools::Itertools;
+use rand::seq::SliceRandom;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
+
+/// In continuous (timed) mode, keep at least this many characters queued ahead
+/// of the cursor so the typist never runs out of words before the clock stops.
+const REFILL_LOOKAHEAD_CHARS: usize = 120;
+
+/// How many fresh words to append each time the queue runs low.
+const REFILL_WORD_COUNT: usize = 30;
 
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
@@ -37,6 +45,10 @@ pub struct Thok {
     pub accuracy: f64,
     pub std_dev: f64,
     pub pace_wpm: Option<f64>,
+    /// Word pool for continuous (timed) mode. When non-empty, the prompt is
+    /// topped up as the cursor advances and the test ends only on the timer,
+    /// never by reaching the end of the words.
+    pub refill_words: Vec<String>,
 }
 
 impl Thok {
@@ -57,7 +69,42 @@ impl Thok {
             accuracy: 0.0,
             std_dev: 0.0,
             pace_wpm: None,
+            refill_words: vec![],
         }
+    }
+
+    /// True when this test streams new words to fill a time limit rather than
+    /// ending at a fixed prompt length.
+    pub fn is_continuous(&self) -> bool {
+        !self.refill_words.is_empty()
+    }
+
+    /// In continuous mode, append fresh words whenever fewer than
+    /// [`REFILL_LOOKAHEAD_CHARS`] characters remain ahead of the cursor, so the
+    /// typist always has runway until the timer stops. No-op otherwise.
+    pub fn refill_if_needed(&mut self) {
+        if self.refill_words.is_empty() {
+            return;
+        }
+
+        let remaining = self.char_count().saturating_sub(self.cursor_pos);
+        if remaining >= REFILL_LOOKAHEAD_CHARS {
+            return;
+        }
+
+        let rng = &mut rand::thread_rng();
+        let mut appended = String::new();
+        for _ in 0..REFILL_WORD_COUNT {
+            if let Some(word) = self.refill_words.choose(rng) {
+                // the prompt always ends mid-stream, so every appended word is
+                // space-separated from what precedes it.
+                appended.push(' ');
+                appended.push_str(word);
+            }
+        }
+
+        self.prompt.push_str(&appended);
+        self.prompt_chars.extend(appended.chars());
     }
 
     /// Index of the pace caret after `elapsed_secs`, or None if pacing is
@@ -213,6 +260,7 @@ impl Thok {
             },
         );
         self.increment_cursor();
+        self.refill_if_needed();
     }
 
     pub fn has_started(&self) -> bool {
@@ -220,8 +268,12 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        (self.input.len() == self.char_count())
-            || (self.seconds_remaining.is_some() && self.seconds_remaining.unwrap() <= 0.0)
+        let timer_expired = self.seconds_remaining.is_some_and(|sr| sr <= 0.0);
+        if self.is_continuous() {
+            // words stream forever; only the clock ends a continuous test.
+            return timer_expired;
+        }
+        (self.input.len() == self.char_count()) || timer_expired
     }
 
     pub fn save_results(&self) -> io::Result<()> {
@@ -431,6 +483,56 @@ mod tests {
         thok.on_tick();
         assert_eq!(thok.seconds_remaining, None);
         assert!(!thok.has_finished());
+    }
+
+    #[test]
+    fn continuous_mode_refills_ahead_of_cursor() {
+        let mut thok = Thok::new("a b".to_string(), 2, Some(30.0));
+        thok.refill_words = vec!["word".to_string()];
+        assert!(thok.is_continuous());
+
+        let before = thok.char_count();
+        // type into the prompt; refill should kick in well before the end
+        for _ in 0..3 {
+            thok.write('a');
+        }
+        assert!(
+            thok.char_count() > before,
+            "prompt should have grown via refill"
+        );
+        // always keeps runway ahead of the cursor
+        assert!(thok.char_count() - thok.cursor_pos >= REFILL_LOOKAHEAD_CHARS - REFILL_WORD_COUNT);
+    }
+
+    #[test]
+    fn continuous_mode_finishes_only_on_timer() {
+        let mut thok = Thok::new("ab".to_string(), 1, Some(0.2));
+        thok.refill_words = vec!["word".to_string()];
+        // typing the whole visible prompt must NOT finish a continuous test
+        thok.write('a');
+        thok.write('b');
+        assert!(!thok.has_finished(), "length must not end a timed test");
+        // only the clock ends it
+        thok.on_tick();
+        thok.on_tick();
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn non_continuous_still_finishes_by_length() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        assert!(!thok.is_continuous());
+        thok.write('a');
+        thok.write('b');
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn refill_is_noop_without_pool() {
+        let mut thok = Thok::new("ab".to_string(), 1, Some(30.0));
+        let before = thok.char_count();
+        thok.refill_if_needed();
+        assert_eq!(thok.char_count(), before);
     }
 
     #[test]

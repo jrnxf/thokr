@@ -38,11 +38,11 @@ Usage: thokr [OPTIONS]
 
 Options:
   -w, --number-of-words <NUMBER_OF_WORDS>
-          number of words to use in test [default: 15]
+          number of words to use in test (initial buffer only when timed) [default: 15]
   -f, --full-sentences <NUMBER_OF_SENTENCES>
           number of sentences to use in test
   -s, --number-of-secs <NUMBER_OF_SECS>
-          number of seconds to run test
+          run a timed test for this many seconds; words stream continuously until the clock stops (unless -p or -f fixes the text)
   -p, --prompt <PROMPT>
           custom prompt to use
   -l, --supported-language <SUPPORTED_LANGUAGE>
@@ -63,13 +63,24 @@ Options:
 | `thokr`                     |                          50 of the 200 most common english words |
 | `thokr -w 100`              |                         100 of the 200 most common English words |
 | `thokr -w 100 -l english1k` |                        100 of the 1000 most common English words |
-| `thokr -w 10 -s 5`          | 10 of the 200 most common English words (hard stop at 5 seconds) |
+| `thokr -s 30`               |    30-second timed test — words stream continuously until time runs out |
+| `thokr -s 60 -l english1k`  |     60-second timed test drawing from the 1000 most common words |
+| `thokr -p "$(cat foo.txt)" -s 30` | custom prompt with a 30s cap (fixed text, stops early if you finish it) |
 | `thokr -p "$(cat foo.txt)"` |                   custom prompt with the output of `cat foo.txt` |
 | `thokr -f 4`                | 4 grammatical sentences with full stops; overrides word settings |
 | `thokr --pace 60`           |         15 most common words with a ghost caret racing at 60 wpm |
 
 _During a test you can press ← to start over or → to see a new prompt (assuming
 you didn't supply a custom one)_
+
+### Timed (continuous) mode
+
+Passing `-s <seconds>` on its own runs a **continuous** test: fresh words stream
+in as you type and the test only ends when the clock hits zero — a long prompt
+scrolls a few lines at a time so the layout stays put. `-w` then just sets the
+size of the initial on-screen buffer. Combining `-s` with a custom prompt (`-p`)
+or sentences (`-f`) keeps the text fixed, so the test still ends when you finish
+it or the timer expires, whichever comes first.
 
 ## Supported Languages
 
