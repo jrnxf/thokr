@@ -23,3 +23,8 @@ webbrowser = "1.2.2"
 
 [dev-dependencies]
 insta = "1.49"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

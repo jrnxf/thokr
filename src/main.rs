@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod bench;
 mod history;
 mod lang;
 mod layout;
@@ -19,6 +21,7 @@ use ratatui::{
     },
 };
 use std::{
+    cell::LazyCell,
     io::{self, stdin},
     mem,
     ops::ControlFlow,
@@ -59,6 +62,9 @@ struct Cli {
 struct App {
     cli: Cli,
     thok: Thok,
+    /// Whether a browser can be opened for the tweet key. Finding out means
+    /// searching `$PATH`, so it is done once, when the first results show.
+    can_tweet: LazyCell<bool>,
     /// The first failure to write the history log, reported on exit.
     save_error: Option<io::Error>,
 }
@@ -69,6 +75,7 @@ impl App {
         Self {
             thok: Self::new_thok(&cli, prompt, word_count),
             cli,
+            can_tweet: LazyCell::new(Browser::is_available),
             save_error: None,
         }
     }
@@ -105,7 +112,7 @@ impl App {
     }
 
     fn draw(&self, frame: &mut ratatui::Frame) {
-        let can_tweet = self.thok.has_finished() && Browser::is_available();
+        let can_tweet = self.thok.has_finished() && *self.can_tweet;
         ui::draw(frame, &self.thok, can_tweet);
     }
 
@@ -125,7 +132,7 @@ impl App {
             }
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('n') => self.new_test(),
-            KeyCode::Char('t') if Browser::is_available() => self.tweet(),
+            KeyCode::Char('t') if *self.can_tweet => self.tweet(),
             _ => {}
         }
         ControlFlow::Continue(())
