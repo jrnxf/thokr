@@ -96,6 +96,7 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
 /// One wrapped line of the prompt. Typed chars are green or red, the rest
 /// dim; the pace caret is its own char with the colours reversed. The cursor
 /// cell is a plain char: the terminal's bar cursor is drawn over it.
+/// Neighbouring chars of one style share a span.
 fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'static> {
     let mut spans: Vec<Span> = Vec::new();
     for idx in line {
@@ -111,7 +112,10 @@ fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'st
         } else {
             style
         };
-        spans.push(Span::styled(String::from(char), style));
+        match spans.last_mut() {
+            Some(span) if span.style == style => span.content.to_mut().push(char),
+            _ => spans.push(Span::styled(String::from(char), style)),
+        }
     }
     Line::from(spans)
 }
