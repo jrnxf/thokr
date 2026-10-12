@@ -25,9 +25,8 @@ use std::{
     mem,
     ops::ControlFlow,
     panic, thread,
-    time::{Duration, Instant},
+    time::Instant,
 };
-use webbrowser::Browser;
 
 /// sleek typing tui with visualized results and historical logging
 #[derive(Parser, Debug)]
@@ -58,20 +57,9 @@ struct Cli {
     pace: Option<u16>,
 }
 
-/// How often a results screen that is up before the browser lookup has
-/// answered looks for the answer.
-const BROWSER_POLL: Duration = Duration::from_millis(50);
-
 struct App {
     cli: Cli,
     thok: Thok,
-    /// Whether a browser can be opened for the tweet key; false until
-    /// `browser_lookup` has answered.
-    can_tweet: bool,
-    /// Finding a browser can mean running a command and waiting for it
-    /// (`xdg-settings` on Linux), so a thread does it, once, from launch.
-    /// `None` once its answer is in `can_tweet`.
-    browser_lookup: Option<thread::JoinHandle<bool>>,
     /// The first failure to write the history log, reported on exit.
     save_error: Option<io::Error>,
 }
@@ -82,8 +70,6 @@ impl App {
         Self {
             thok: Self::new_thok(&cli, prompt, word_count),
             cli,
-            can_tweet: false,
-            browser_lookup: Some(thread::spawn(Browser::is_available)),
             save_error: None,
         }
     }
@@ -119,16 +105,8 @@ impl App {
         self.thok = Self::new_thok(&self.cli, prompt, word_count);
     }
 
-    /// Takes the answer of the browser lookup once it is in; never waits for it.
-    fn collect_browser_lookup(&mut self) {
-        if let Some(lookup) = self.browser_lookup.take_if(|lookup| lookup.is_finished()) {
-            // a lookup that panicked has found no browser
-            self.can_tweet = lookup.join().unwrap_or(false);
-        }
-    }
-
     fn draw(&self, frame: &mut ratatui::Frame) {
-        ui::draw(frame, &self.thok, self.can_tweet);
+        ui::draw(frame, &self.thok);
     }
 
     fn on_key(&mut self, key: KeyEvent) -> ControlFlow<()> {
@@ -147,28 +125,14 @@ impl App {
             }
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('n') => self.new_test(),
-            KeyCode::Char('t') if self.can_tweet => self.tweet(),
             _ => {}
         }
         ControlFlow::Continue(())
     }
 
-    /// When to stop waiting for a key and draw again: at the next tick of a
-    /// running test or, on a results screen that is still waiting for the
-    /// browser lookup, when it is time to look for the answer.
-    fn next_tick(&self) -> Option<Instant> {
-        self.thok.next_tick().or_else(|| {
-            let waiting = self.thok.has_finished() && self.browser_lookup.is_some();
-            waiting.then(|| Instant::now() + BROWSER_POLL)
-        })
-    }
-
     fn on_tick(&mut self) {
-        // on the results screen a tick is only there to draw again
-        if !self.thok.has_finished() {
-            self.thok.on_tick();
-            self.save_if_finished();
-        }
+        self.thok.on_tick();
+        self.save_if_finished();
     }
 
     /// Call after anything that can end the test: a key press or a tick.
@@ -179,15 +143,6 @@ impl App {
                 self.save_error.get_or_insert(error);
             }
         }
-    }
-
-    fn tweet(&self) {
-        let url = format!(
-            "https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fthatvegandev%2Fthokr",
-            self.thok.wpm, self.thok.accuracy, self.thok.std_dev
-        );
-        // nothing useful can be done on the results screen if the browser fails
-        let _ = webbrowser::open(&url);
     }
 }
 
@@ -259,10 +214,9 @@ fn run_in_terminal(app: &mut App) -> io::Result<()> {
 
 fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
-        app.collect_browser_lookup();
         terminal.draw(|frame| app.draw(frame))?;
 
-        match next_input(app.next_tick())? {
+        match next_input(app.thok.next_tick())? {
             Input::Key(key) => {
                 if app.on_key(key).is_break() {
                     return Ok(());
@@ -295,43 +249,5 @@ fn next_input(tick_at: Option<Instant>) -> io::Result<Input> {
             Event::Resize(_, _) => return Ok(Input::Resize),
             _ => {}
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::backend::TestBackend;
-    use std::sync::mpsc;
-
-    /// The screen `app` draws, as text.
-    fn screen(app: &App) -> String {
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal.draw(|frame| app.draw(frame)).unwrap();
-        let cells = terminal.backend().buffer().content();
-        cells.iter().map(|cell| cell.symbol()).collect()
-    }
-
-    #[test]
-    fn results_do_not_wait_for_the_browser_lookup() {
-        // an empty prompt is finished at once, so its results are up before
-        // a lookup can have answered; this lookup answers when it is told to
-        let (answer, asked) = mpsc::channel();
-        let mut app = App::new(Cli::parse_from(["thokr", "-p", ""]));
-        app.browser_lookup = Some(thread::spawn(move || asked.recv().unwrap_or(false)));
-
-        // no answer yet: the results are drawn without the tweet key, and
-        // the loop is told when to look again
-        app.collect_browser_lookup();
-        assert!(!screen(&app).contains("(t)weet"));
-        assert!(app.next_tick().is_some());
-
-        answer.send(true).unwrap();
-        while app.browser_lookup.is_some() {
-            thread::yield_now();
-            app.collect_browser_lookup();
-        }
-        assert!(screen(&app).contains("(t)weet"));
-        assert!(app.next_tick().is_none());
     }
 }

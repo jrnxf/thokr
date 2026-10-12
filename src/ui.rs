@@ -20,18 +20,18 @@ const INCORRECT: Style = BOLD.fg(Color::Red);
 const UNTYPED: Style = BOLD.add_modifier(Modifier::DIM);
 
 /// Draws the test: the prompt while it is running, the results once it has
-/// finished. `can_tweet` adds the tweet key to the results legend.
-pub fn draw(frame: &mut Frame, thok: &Thok, can_tweet: bool) {
+/// finished.
+pub fn draw(frame: &mut Frame, thok: &Thok) {
     let area = frame.area();
-    if let Some(cursor) = render(thok, can_tweet, area, frame.buffer_mut()) {
+    if let Some(cursor) = render(thok, area, frame.buffer_mut()) {
         frame.set_cursor_position(cursor);
     }
 }
 
 /// Returns where the cursor belongs; the results screen has none.
-fn render(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) -> Option<Position> {
+fn render(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if thok.has_finished() {
-        render_results(thok, can_tweet, area, buf);
+        render_results(thok, area, buf);
         None
     } else {
         render_running(thok, area, buf)
@@ -114,7 +114,7 @@ fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'st
     Line::from(spans)
 }
 
-fn render_results(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) {
+fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
     let [chart_area, stats_area, _, legend_area] = Layout::vertical([
         Constraint::Min(1),
         Constraint::Length(1),
@@ -172,13 +172,8 @@ fn render_results(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) {
         .alignment(Alignment::Center)
         .render(stats_area, buf);
 
-    let legend = if can_tweet {
-        "(r)etry / (n)ew / (t)weet / (esc)ape"
-    } else {
-        "(r)etry / (n)ew / (esc)ape"
-    };
     Paragraph::new(Span::styled(
-        legend,
+        "(r)etry / (n)ew / (esc)ape",
         Style::new().add_modifier(Modifier::ITALIC),
     ))
     .render(legend_area, buf);
@@ -194,18 +189,14 @@ mod tests {
     const PROMPT: &str = "the quick brown fox jumps over the lazy dog";
     const LONG_PROMPT: &str = "it was the best of times it was the worst of times it was the age of wisdom it was the age of foolishness it was the epoch of belief it was the epoch of incredulity";
 
-    /// Draws one frame, on a machine that has a browser, and returns it as
-    /// text: the characters, then one style letter per cell, then what each
-    /// letter means, then where the cursor is.
+    /// Draws one frame and returns it as text: the characters, then one
+    /// style letter per cell, then what each letter means, then where the
+    /// cursor is.
     fn draw(thok: &Thok, width: u16, height: u16) -> String {
-        draw_frame(thok, true, width, height)
-    }
-
-    fn draw_frame(thok: &Thok, can_tweet: bool, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut cursor = None;
         terminal
-            .draw(|f| cursor = render(thok, can_tweet, f.area(), f.buffer_mut()))
+            .draw(|f| cursor = render(thok, f.area(), f.buffer_mut()))
             .unwrap();
 
         let buffer = terminal.backend().buffer();
@@ -332,11 +323,6 @@ mod tests {
     #[test]
     fn results_screen() {
         insta::assert_snapshot!(draw(&finished(), 80, 24));
-    }
-
-    #[test]
-    fn results_screen_without_a_browser() {
-        insta::assert_snapshot!(draw_frame(&finished(), false, 80, 24));
     }
 
     #[test]
