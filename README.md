@@ -17,6 +17,16 @@
 $ cargo install thokr
 ```
 
+### Homebrew
+
+```sh
+$ brew tap jrnxf/thokr https://github.com/jrnxf/thokr
+$ brew install thokr
+```
+
+The formula builds thokr from source, so it needs a Rust toolchain (Homebrew
+installs one for you).
+
 ### Arch Linux
 
 Install `thokr-git` from the AUR
@@ -124,6 +134,9 @@ also simply open an issue and select `Feature Request`
 4. Rebase off main (`git fetch --all && git rebase origin/main`)
 5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
+
+Maintainers: after publishing a release, run `scripts/bump-formula.sh <version>`
+and commit the updated `Formula/thokr.rb`.
 
 See the [open issues](https://github.com/jrnxf/thokr/issues) for a full
 list of proposed features (and known issues).
