@@ -184,18 +184,16 @@ impl Thok {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{Duration, Instant};
-
-    /// Builds a finished-by-length thok: every char of `typed` written against
-    /// `prompt`, with the i-th keystroke stamped at started_at + offsets[i].
-    fn thok_with_input(prompt: &str, typed: &str, offsets_ms: &[u64]) -> Thok {
-        let mut thok = Thok::new(prompt.to_string(), prompt.split(' ').count(), None);
+impl Thok {
+    /// A test that started 60 seconds ago, with `typed` typed against
+    /// `prompt`: the i-th key `offsets_ms[i]` after the start, or right at
+    /// the start if it has no offset.
+    pub fn typed(prompt: &str, typed: &str, secs: Option<f64>, offsets_ms: &[u64]) -> Self {
+        let mut thok = Self::new(prompt.to_string(), prompt.split(' ').count(), secs);
         let started_at = Instant::now() - Duration::from_secs(60);
         thok.started_at = Some(started_at);
         for (i, c) in typed.chars().enumerate() {
-            let outcome = if c == prompt.chars().nth(i).unwrap() {
+            let outcome = if c == thok.get_expected_char(i) {
                 Outcome::Correct
             } else {
                 Outcome::Incorrect
@@ -203,11 +201,18 @@ mod tests {
             thok.input.push(Input {
                 char: c,
                 outcome,
-                timestamp: started_at + Duration::from_millis(offsets_ms[i]),
+                timestamp: started_at
+                    + Duration::from_millis(offsets_ms.get(i).copied().unwrap_or(0)),
             });
         }
         thok
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn write_records_correct_and_incorrect() {
@@ -257,7 +262,7 @@ mod tests {
 
     #[test]
     fn calc_results_accuracy() {
-        let mut thok = thok_with_input("hello", "hellx", &[100, 300, 500, 700, 900]);
+        let mut thok = Thok::typed("hello", "hellx", None, &[100, 300, 500, 700, 900]);
         thok.calc_results();
         // 4 of 5 correct => 80%
         assert_eq!(thok.accuracy, 80.0);
@@ -265,7 +270,7 @@ mod tests {
 
     #[test]
     fn calc_results_wpm_all_correct() {
-        let mut thok = thok_with_input("hello", "hello", &[200, 400, 600, 800, 950]);
+        let mut thok = Thok::typed("hello", "hello", None, &[200, 400, 600, 800, 950]);
         thok.calc_results();
         // all 5 offsets are under 1s so they clamp to bucket 1.0:
         // cumulative 5 chars => (60/1)*5/5 = 60, ceiled
@@ -299,7 +304,8 @@ mod tests {
 
     #[test]
     fn calc_results_buckets_have_sane_x_axis() {
-        let mut thok = thok_with_input("abcdef", "abcdef", &[100, 300, 500, 1200, 1400, 2350]);
+        let offsets = [100, 300, 500, 1200, 1400, 2350];
+        let mut thok = Thok::typed("abcdef", "abcdef", None, &offsets);
         thok.calc_results();
         assert!(!thok.wpm_coords.is_empty());
         assert!(thok.wpm_coords.iter().all(|(x, _)| x.is_finite()));
