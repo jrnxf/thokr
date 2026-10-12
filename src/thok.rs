@@ -1,8 +1,7 @@
-use crate::util::std_dev;
 use crate::TICK_RATE_MS;
+use crate::util::std_dev;
 use chrono::prelude::*;
 use directories::ProjectDirs;
-use itertools::Itertools;
 use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::{char, collections::HashMap, time::SystemTime};
@@ -117,7 +116,7 @@ impl Thok {
 
         let whole_second_limit = elapsed_secs.floor();
 
-        let correct_chars_per_sec: Vec<(f64, f64)> = correct_chars
+        let mut correct_chars_per_sec: Vec<(f64, f64)> = correct_chars
             .clone()
             .into_iter()
             .fold(HashMap::new(), |mut map, i| {
@@ -145,8 +144,8 @@ impl Thok {
             })
             .into_iter()
             .map(|(k, v)| (k.parse::<f64>().unwrap(), v as f64))
-            .sorted_by(|a, b| a.partial_cmp(b).unwrap())
             .collect();
+        correct_chars_per_sec.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let correct_chars_at_whole_sec_intervals = correct_chars_per_sec
             .iter()

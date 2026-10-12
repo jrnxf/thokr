@@ -186,11 +186,13 @@ impl Widget for &Thok {
                     }
                 }
 
-                let datasets = vec![Dataset::default()
-                    .marker(ratatui::symbols::Marker::Braille)
-                    .style(magenta_style)
-                    .graph_type(GraphType::Line)
-                    .data(&self.wpm_coords)];
+                let datasets = vec![
+                    Dataset::default()
+                        .marker(ratatui::symbols::Marker::Braille)
+                        .style(magenta_style)
+                        .graph_type(GraphType::Line)
+                        .data(&self.wpm_coords),
+                ];
 
                 let mut overall_duration = match self.wpm_coords.last() {
                     Some(x) => x.0,
@@ -255,7 +257,7 @@ impl Widget for &Thok {
 mod tests {
     use super::*;
     use crate::thok::Input;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
     use std::time::{Duration, SystemTime};
 
