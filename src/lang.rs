@@ -50,3 +50,51 @@ pub fn random_sentences(count: usize) -> (String, usize) {
     text.pop();
     (text, word_count)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn word_lists_hold_one_word_per_line() {
+        for (language, size) in [
+            (Language::English, 200),
+            (Language::English1k, 999),
+            (Language::English10k, 9954),
+        ] {
+            let words: Vec<&str> = language.words().lines().collect();
+            assert_eq!(words.len(), size, "{language:?}");
+            assert!(
+                words.iter().all(|w| !w.is_empty() && !w.contains(' ')),
+                "{language:?} has a blank line or a space"
+            );
+        }
+    }
+
+    #[test]
+    fn random_words_are_distinct_words_of_the_list() {
+        let list: HashSet<&str> = Language::English.words().lines().collect();
+        let prompt = Language::English.random_words(15);
+        let words: Vec<&str> = prompt.split(' ').collect();
+        assert_eq!(words.len(), 15);
+        assert_eq!(words.iter().collect::<HashSet<_>>().len(), 15);
+        assert!(words.iter().all(|w| list.contains(w)));
+    }
+
+    #[test]
+    fn random_words_stop_at_the_size_of_the_list() {
+        let prompt = Language::English.random_words(500);
+        assert_eq!(prompt.split(' ').count(), 200);
+        assert_eq!(Language::English.random_words(0), "");
+    }
+
+    #[test]
+    fn random_sentences_count_their_words() {
+        let (text, word_count) = random_sentences(3);
+        assert_eq!(text.split(' ').count(), word_count);
+        assert_eq!(text.matches('.').count(), 3);
+        assert!(text.ends_with('.'));
+        assert_eq!(random_sentences(0), (String::new(), 0));
+    }
+}
