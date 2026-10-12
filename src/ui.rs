@@ -1,256 +1,189 @@
+use crate::layout;
+use crate::thok::{Outcome, Thok};
 use ratatui::{
+    Frame,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
+    symbols::Marker,
     text::{Line, Span},
     widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
 };
-use webbrowser::Browser;
-
-use crate::layout;
-use crate::thok::{Outcome, Thok};
+use std::ops::Range;
 
 const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
 
-/// Shared geometry for the running view, so the renderer and the hardware
-/// cursor math cannot drift. Returns the per-line max width, the wrapped
-/// line ranges (1:1 char↔cell), and the 4-chunk vertical layout.
-struct RunningGeometry {
-    max_chars_per_line: u16,
-    lines: Vec<std::ops::Range<usize>>,
-    chunks: std::rc::Rc<[Rect]>,
+const BOLD: Style = Style::new().add_modifier(Modifier::BOLD);
+const CORRECT: Style = BOLD.fg(Color::Green);
+const INCORRECT: Style = BOLD.fg(Color::Red);
+const UNTYPED: Style = BOLD.add_modifier(Modifier::DIM);
+
+/// Draws the test: the prompt while it is running, the results once it has
+/// finished. `can_tweet` adds the tweet key to the results legend.
+pub fn draw(frame: &mut Frame, thok: &Thok, can_tweet: bool) {
+    let area = frame.area();
+    if let Some(cursor) = render(thok, can_tweet, area, frame.buffer_mut()) {
+        frame.set_cursor_position(cursor);
+    }
 }
 
-fn running_geometry(thok: &Thok, area: Rect) -> RunningGeometry {
+/// Returns where the cursor belongs; the results screen has none.
+fn render(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) -> Option<Position> {
+    if thok.has_finished() {
+        render_results(thok, can_tweet, area, buf);
+        None
+    } else {
+        render_running(thok, area, buf)
+    }
+}
+
+fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
+    // the wrapped lines place both the text and the cursor (1:1 char to cell)
     let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
     let lines = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
-    let prompt_occupied_lines = lines.len() as u16;
+    let prompt_lines = lines.len() as u16;
+    let timer_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
+    let padding = area.height.saturating_sub(prompt_lines) / 2;
 
-    let time_left_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
+    let [_, timer_area, prompt_area, _] = Layout::vertical([
+        Constraint::Length(padding),
+        Constraint::Length(timer_lines),
+        Constraint::Length(prompt_lines),
+        Constraint::Length(padding),
+    ])
+    .horizontal_margin(HORIZONTAL_MARGIN)
+    .areas(area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .horizontal_margin(HORIZONTAL_MARGIN)
-        .constraints(
-            [
-                Constraint::Length(
-                    ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
-                ),
-                Constraint::Length(time_left_lines),
-                Constraint::Length(prompt_occupied_lines),
-                Constraint::Length(
-                    ((area.height as f64 - prompt_occupied_lines as f64) / 2.0) as u16,
-                ),
-            ]
-            .as_ref(),
-        )
-        .split(area);
+    let pace = thok.pace_caret_index();
+    let text: Vec<Line> = lines
+        .iter()
+        .map(|line| prompt_line(thok, line.clone(), pace))
+        .collect();
 
-    RunningGeometry {
-        max_chars_per_line,
-        lines,
-        chunks,
+    // when the prompt is small enough to fit on one line
+    // centering the text gives a nice zen feeling
+    let centered = lines.len() == 1;
+    Paragraph::new(text)
+        .alignment(if centered {
+            Alignment::Center
+        } else {
+            Alignment::Left
+        })
+        .render(prompt_area, buf);
+
+    if let Some(secs) = thok.seconds_remaining {
+        Paragraph::new(Span::styled(format!("{secs:.1}"), UNTYPED))
+            .alignment(Alignment::Center)
+            .render(timer_area, buf);
     }
-}
 
-/// Screen cell for the hardware cursor while a test is running.
-/// `None` when the test has finished (the results screen has no cursor).
-pub fn cursor_screen_position(thok: &Thok, area: Rect) -> Option<Position> {
-    if thok.has_finished() {
-        return None;
-    }
-
-    let geo = running_geometry(thok, area);
-    let prompt_chunk = geo.chunks[2];
-
-    let (line_no, col) =
-        layout::char_cell(&thok.prompt_chars, geo.max_chars_per_line, thok.cursor_pos)?;
-
-    let line_len = geo.lines.get(line_no).map(|r| r.end - r.start).unwrap_or(0) as u16;
-
-    // alignment matches the renderer: center only when the prompt is one line
-    let x_offset = if geo.lines.len() == 1 {
-        (prompt_chunk.width.saturating_sub(line_len)) / 2
+    let (line_no, col) = layout::char_cell(&lines, thok.input.len())?;
+    let x_offset = if centered {
+        prompt_area
+            .width
+            .saturating_sub(lines[line_no].len() as u16)
+            / 2
     } else {
         0
     };
-
-    let x = prompt_chunk.x + x_offset + col;
-    let y = prompt_chunk.y + line_no as u16;
-    Some(Position::new(x, y))
+    Some(Position::new(
+        prompt_area.x + x_offset + col,
+        prompt_area.y + line_no as u16,
+    ))
 }
 
-impl Widget for &Thok {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        // styles
-        let bold_style = Style::default().add_modifier(Modifier::BOLD);
-
-        let green_bold_style = Style::default().patch(bold_style).fg(Color::Green);
-        let red_bold_style = Style::default().patch(bold_style).fg(Color::Red);
-
-        let dim_bold_style = Style::default()
-            .patch(bold_style)
-            .add_modifier(Modifier::DIM);
-
-        let italic_style = Style::default().add_modifier(Modifier::ITALIC);
-
-        let magenta_style = Style::default().fg(Color::Magenta);
-
-        match !self.has_finished() {
-            true => {
-                let geo = running_geometry(self, area);
-                let chunks = geo.chunks;
-                let pace = self.pace_caret_index();
-
-                // one span per prompt char (1:1 with cells). The pace cell
-                // keeps its real character and gets a REVERSED block patched
-                // onto whatever style it already has (demo variant). The
-                // cursor cell is a plain dim-bold char — the hardware bar
-                // cursor overlays it (set in main::ui).
-                let spans = self
-                    .prompt_chars
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, &expected)| {
-                        let mut span = if idx < self.input.len() {
-                            match self.input[idx].outcome {
-                                Outcome::Incorrect => Span::styled(
-                                    if expected == ' ' {
-                                        "·".to_owned()
-                                    } else {
-                                        expected.to_string()
-                                    },
-                                    red_bold_style,
-                                ),
-                                Outcome::Correct => {
-                                    Span::styled(expected.to_string(), green_bold_style)
-                                }
-                            }
-                        } else {
-                            Span::styled(expected.to_string(), dim_bold_style)
-                        };
-
-                        if Some(idx) == pace {
-                            span.style = span.style.add_modifier(Modifier::REVERSED);
-                        }
-                        span
-                    })
-                    .collect::<Vec<Span>>();
-
-                // chunk the flat span list into lines using the wrap ranges
-                let text_lines = geo
-                    .lines
-                    .iter()
-                    .map(|r| Line::from(spans[r.clone()].to_vec()))
-                    .collect::<Vec<Line>>();
-
-                let widget = Paragraph::new(text_lines).alignment(if geo.lines.len() == 1 {
-                    // when the prompt is small enough to fit on one line
-                    // centering the text gives a nice zen feeling
-                    Alignment::Center
-                } else {
-                    Alignment::Left
-                });
-
-                widget.render(chunks[2], buf);
-
-                if let Some(sr) = self.seconds_remaining {
-                    let timer = Paragraph::new(Span::styled(format!("{:.1}", sr), dim_bold_style))
-                        .alignment(Alignment::Center);
-
-                    timer.render(chunks[1], buf);
-                }
-            }
-            false => {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .horizontal_margin(HORIZONTAL_MARGIN)
-                    .vertical_margin(VERTICAL_MARGIN)
-                    .constraints(
-                        [
-                            Constraint::Min(1),
-                            Constraint::Length(1),
-                            Constraint::Length(1), // for padding
-                            Constraint::Length(1),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(area);
-
-                let mut highest_wpm = 0.0;
-
-                for ts in &self.wpm_coords {
-                    if ts.1 > highest_wpm {
-                        highest_wpm = ts.1;
-                    }
-                }
-
-                let datasets = vec![
-                    Dataset::default()
-                        .marker(ratatui::symbols::Marker::Braille)
-                        .style(magenta_style)
-                        .graph_type(GraphType::Line)
-                        .data(&self.wpm_coords),
-                ];
-
-                let mut overall_duration = match self.wpm_coords.last() {
-                    Some(x) => x.0,
-                    _ => self.seconds_remaining.unwrap_or(1.0),
-                };
-
-                overall_duration = if overall_duration < 1.0 {
-                    1.0
-                } else {
-                    overall_duration
-                };
-
-                let chart = Chart::new(datasets)
-                    .x_axis(
-                        Axis::default()
-                            .title("seconds")
-                            .bounds([1.0, overall_duration])
-                            .labels(vec![
-                                Span::styled("1", bold_style),
-                                Span::styled(format!("{:.2}", overall_duration), bold_style),
-                            ]),
-                    )
-                    .y_axis(
-                        Axis::default()
-                            .title("wpm")
-                            .bounds([0.0, highest_wpm.round()])
-                            .labels(vec![
-                                Span::styled("0", bold_style),
-                                Span::styled(format!("{}", highest_wpm.round()), bold_style),
-                            ]),
-                    );
-
-                chart.render(chunks[0], buf);
-
-                let stats = Paragraph::new(Span::styled(
-                    format!(
-                        "{} wpm   {}% acc   {:.2} sd",
-                        self.wpm, self.accuracy, self.std_dev
-                    ),
-                    bold_style,
-                ))
-                .alignment(Alignment::Center);
-
-                stats.render(chunks[1], buf);
-
-                let legend = Paragraph::new(Span::styled(
-                    String::from(if Browser::is_available() {
-                        "(r)etry / (n)ew / (t)weet / (esc)ape"
-                    } else {
-                        "(r)etry / (n)ew / (esc)ape"
-                    }),
-                    italic_style,
-                ));
-
-                legend.render(chunks[3], buf);
-            }
-        }
+/// One wrapped line of the prompt. Typed chars are green or red, the rest
+/// dim; the pace caret is its own char with the colours reversed. The cursor
+/// cell is a plain char: the terminal's bar cursor is drawn over it.
+fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'static> {
+    let mut spans: Vec<Span> = Vec::new();
+    for idx in line {
+        let expected = thok.prompt_chars[idx];
+        let (char, style) = match thok.input.get(idx).map(|input| input.outcome) {
+            Some(Outcome::Correct) => (expected, CORRECT),
+            Some(Outcome::Incorrect) if expected == ' ' => ('·', INCORRECT),
+            Some(Outcome::Incorrect) => (expected, INCORRECT),
+            None => (expected, UNTYPED),
+        };
+        let style = if pace == Some(idx) {
+            style.add_modifier(Modifier::REVERSED)
+        } else {
+            style
+        };
+        spans.push(Span::styled(String::from(char), style));
     }
+    Line::from(spans)
+}
+
+fn render_results(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) {
+    let [chart_area, stats_area, _, legend_area] = Layout::vertical([
+        Constraint::Min(1),
+        Constraint::Length(1),
+        Constraint::Length(1), // for padding
+        Constraint::Length(1),
+    ])
+    .horizontal_margin(HORIZONTAL_MARGIN)
+    .vertical_margin(VERTICAL_MARGIN)
+    .areas(area);
+
+    let highest_wpm = thok
+        .wpm_coords
+        .iter()
+        .map(|&(_, wpm)| wpm)
+        .fold(0.0, f64::max)
+        .round();
+    let overall_duration = thok
+        .wpm_coords
+        .last()
+        .map_or(thok.seconds_remaining.unwrap_or(1.0), |&(secs, _)| secs)
+        .max(1.0);
+
+    let wpm_over_time = Dataset::default()
+        .marker(Marker::Braille)
+        .style(Style::new().fg(Color::Magenta))
+        .graph_type(GraphType::Line)
+        .data(&thok.wpm_coords);
+
+    Chart::new(vec![wpm_over_time])
+        .x_axis(
+            Axis::default()
+                .title("seconds")
+                .bounds([1.0, overall_duration])
+                .labels([
+                    Span::styled("1", BOLD),
+                    Span::styled(format!("{overall_duration:.2}"), BOLD),
+                ]),
+        )
+        .y_axis(
+            Axis::default()
+                .title("wpm")
+                .bounds([0.0, highest_wpm])
+                .labels([
+                    Span::styled("0", BOLD),
+                    Span::styled(format!("{highest_wpm}"), BOLD),
+                ]),
+        )
+        .render(chart_area, buf);
+
+    let stats = format!(
+        "{} wpm   {}% acc   {:.2} sd",
+        thok.wpm, thok.accuracy, thok.std_dev
+    );
+    Paragraph::new(Span::styled(stats, BOLD))
+        .alignment(Alignment::Center)
+        .render(stats_area, buf);
+
+    let legend = if can_tweet {
+        "(r)etry / (n)ew / (t)weet / (esc)ape"
+    } else {
+        "(r)etry / (n)ew / (esc)ape"
+    };
+    Paragraph::new(Span::styled(
+        legend,
+        Style::new().add_modifier(Modifier::ITALIC),
+    ))
+    .render(legend_area, buf);
 }
 
 #[cfg(test)]
@@ -259,22 +192,19 @@ mod tests {
     use crate::thok::Input;
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
-    use std::time::{Duration, SystemTime};
+    use std::time::{Duration, Instant};
 
     const PROMPT: &str = "the quick brown fox jumps over the lazy dog";
     const LONG_PROMPT: &str = "it was the best of times it was the worst of times it was the age of wisdom it was the age of foolishness it was the epoch of belief it was the epoch of incredulity";
 
-    /// Draws one frame the way `main::ui` does and returns it as text: the
-    /// characters, then one style letter per cell, then what each letter
-    /// means, then where the cursor is.
+    /// Draws one frame, on a machine that has a browser, and returns it as
+    /// text: the characters, then one style letter per cell, then what each
+    /// letter means, then where the cursor is.
     fn draw(thok: &Thok, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut cursor = None;
         terminal
-            .draw(|f| {
-                f.render_widget(thok, f.area());
-                cursor = cursor_screen_position(thok, f.area());
-            })
+            .draw(|f| cursor = render(thok, true, f.area(), f.buffer_mut()))
             .unwrap();
 
         let buffer = terminal.backend().buffer();
@@ -319,7 +249,7 @@ mod tests {
     /// start that lies 60 seconds in the past.
     fn typed(prompt: &str, typed: &str, secs: Option<f64>, offsets_ms: &[u64]) -> Thok {
         let mut thok = Thok::new(prompt.to_string(), prompt.split(' ').count(), secs);
-        let started_at = SystemTime::now() - Duration::from_secs(60);
+        let started_at = Instant::now() - Duration::from_secs(60);
         thok.started_at = Some(started_at);
         for (i, c) in typed.chars().enumerate() {
             let outcome = if c == thok.get_expected_char(i) {
@@ -333,7 +263,6 @@ mod tests {
                 timestamp: started_at
                     + Duration::from_millis(offsets_ms.get(i).copied().unwrap_or(0)),
             });
-            thok.cursor_pos += 1;
         }
         thok
     }
@@ -379,7 +308,7 @@ mod tests {
         // 12 wpm is one character a second; 5.5 seconds in, the caret is on index 5
         let mut thok = typed(PROMPT, "the", None, &[]);
         thok.pace_wpm = Some(12.0);
-        thok.started_at = Some(SystemTime::now() - Duration::from_millis(5500));
+        thok.started_at = Some(Instant::now() - Duration::from_millis(5500));
         insta::assert_snapshot!(draw(&thok, 80, 24));
     }
 
@@ -387,7 +316,7 @@ mod tests {
     fn pace_caret_behind_the_typist() {
         let mut thok = typed(PROMPT, "the quack br", None, &[]);
         thok.pace_wpm = Some(12.0);
-        thok.started_at = Some(SystemTime::now() - Duration::from_millis(6500));
+        thok.started_at = Some(Instant::now() - Duration::from_millis(6500));
         insta::assert_snapshot!(draw(&thok, 80, 24));
     }
 
