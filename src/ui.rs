@@ -319,13 +319,13 @@ impl Plot {
         buf.set_string(self.area.x - self.gutter, self.area.bottom(), SEC, FAINT);
     }
 
-    /// The line, one quadrant block char to a 2x2 grid of dots.
+    /// The line, one braille dot thick: a 2x4 grid of dots to a char.
     fn draw_line(&self, coords: &[(f64, f64)], buf: &mut Buffer) {
         if self.area.height == 0 || self.area.width == 0 {
             return;
         }
         Canvas::default()
-            .marker(Marker::Quadrant)
+            .marker(Marker::Braille)
             .x_bounds([self.x0, self.x1])
             .y_bounds([self.y.lo, self.y.hi])
             .paint(|ctx| {
@@ -603,7 +603,7 @@ mod tests {
                 (0..height).any(|y| {
                     matches!(
                         buf[(x, y)].symbol().chars().next(),
-                        Some('\u{2580}'..='\u{259F}')
+                        Some('\u{2800}'..='\u{28FF}')
                     )
                 })
             })
@@ -623,7 +623,7 @@ mod tests {
             assert!(
                 (plot.area.y..plot.area.bottom()).any(|y| matches!(
                     buf[(x, y)].symbol().chars().next(),
-                    Some('\u{2580}'..='\u{259F}')
+                    Some('\u{2800}'..='\u{28FF}')
                 )),
                 "column {x} has no line"
             );
