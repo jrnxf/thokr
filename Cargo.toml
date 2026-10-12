@@ -1,15 +1,15 @@
 [package]
 name = "thokr"
 description = "sleek typing tui with visualized results and historical logging"
-version = "0.5.0"
+version = "0.6.0"
 readme = "README.md"
-repository = "https://github.com/thatvegandev/thokr.git"
-homepage = "https://github.com/thatvegandev/thokr"
+repository = "https://github.com/jrnxf/thokr.git"
+homepage = "https://github.com/jrnxf/thokr"
 license = "MIT"
-authors = ["Colby Thomas <thatvegandev@gmail.com>"]
+authors = ["Colby Thomas <colby@jrnxf.co>"]
 edition = "2024"
 rust-version = "1.88"
-exclude = [".github", "*.log", "Dockerfile", "plans"]
+exclude = [".github", "*.log", "plans"]
 keywords = ["tui", "terminal", "typing"]
 
 [dependencies]

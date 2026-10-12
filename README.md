@@ -1,13 +1,13 @@
 # thokr
 ✨ sleek typing tui with visualized results and historical logging
 
-[![GitHub Build Workflow](https://github.com/thatvegandev/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/build.yml)
-[![GitHub Deploy Workflow](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml)
+[![GitHub Build Workflow](https://github.com/jrnxf/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/build.yml)
+[![GitHub Deploy Workflow](https://github.com/jrnxf/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/deploy.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](./LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
-[![Github Stars](https://img.shields.io/github/stars/thatvegandev/thokr)](https://github.com/thatvegandev/thokr/stargazers)
+[![Github Stars](https://img.shields.io/github/stars/jrnxf/thokr)](https://github.com/jrnxf/thokr/stargazers)
 
-![demo](https://github.com/thatvegandev/assets/raw/main/thokr/demo.gif)
+![demo](https://github.com/jrnxf/assets/raw/main/thokr/demo.gif)
 
 ## Installation
 
@@ -15,12 +15,6 @@
 
 ```sh
 $ cargo install thokr
-```
-
-### Docker
-
-```sh
-$ docker run -it thatvegandev/thokr
 ```
 
 ### Arch Linux
@@ -121,7 +115,7 @@ can easily track your progress over time.
 All contributions are **greatly appreciated**.
 
 If you have a suggestion that would make thokr better, please fork the repo and
-create a [pull request](https://github.com/thatvegandev/thokr/pulls). You can
+create a [pull request](https://github.com/jrnxf/thokr/pulls). You can
 also simply open an issue and select `Feature Request`
 
 1. Fork the repo
@@ -131,7 +125,7 @@ also simply open an issue and select `Feature Request`
 5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
 
-See the [open issues](https://github.com/thatvegandev/thokr/issues) for a full
+See the [open issues](https://github.com/jrnxf/thokr/issues) for a full
 list of proposed features (and known issues).
 
 ## License
@@ -149,6 +143,4 @@ Check out these amazing projects that inspired thokr!
 
 ## Follow
 
-[![github](https://img.shields.io/github/followers/thatvegandev?style=social)](https://github.com/thatvegandev)
-[![twitter](https://img.shields.io/twitter/follow/thatvegandev?color=white&style=social)](https://twitter.com/thatvegandev)
-[![youtube](https://img.shields.io/youtube/channel/subscribers/UCEDfokz6igeN4bX7Whq49-g?style=social)](https://youtube.com/user/thatvegandev)
+[![github](https://img.shields.io/github/followers/jrnxf?style=social)](https://github.com/jrnxf)
