@@ -114,6 +114,30 @@ fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'st
     Line::from(spans)
 }
 
+/// The bounds of the seconds axis and of the wpm axis. No point of the
+/// results lies outside them: the chart cuts a line off at its edges, so a
+/// point outside would leave its peak shaved or its line missing.
+fn chart_bounds(thok: &Thok) -> ([f64; 2], [f64; 2]) {
+    // rounded up, never to the nearest: a peak of 98.4 must fit under the top
+    let highest_wpm = thok
+        .wpm_coords
+        .iter()
+        .map(|&(_, wpm)| wpm)
+        .fold(0.0, f64::max)
+        .ceil();
+    // the axis starts at second 1, or at 0 for a test over in under a second
+    let first_second = match thok.wpm_coords.first() {
+        Some(&(secs, _)) if secs < 1.0 => 0.0,
+        _ => 1.0,
+    };
+    let overall_duration = thok
+        .wpm_coords
+        .last()
+        .map_or(thok.seconds_remaining.unwrap_or(1.0), |&(secs, _)| secs)
+        .max(1.0);
+    ([first_second, overall_duration], [0.0, highest_wpm])
+}
+
 fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
     let [chart_area, stats_area, _, legend_area] = Layout::vertical([
         Constraint::Min(1),
@@ -125,17 +149,7 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
     .vertical_margin(VERTICAL_MARGIN)
     .areas(area);
 
-    let highest_wpm = thok
-        .wpm_coords
-        .iter()
-        .map(|&(_, wpm)| wpm)
-        .fold(0.0, f64::max)
-        .round();
-    let overall_duration = thok
-        .wpm_coords
-        .last()
-        .map_or(thok.seconds_remaining.unwrap_or(1.0), |&(secs, _)| secs)
-        .max(1.0);
+    let ([first_second, overall_duration], [_, highest_wpm]) = chart_bounds(thok);
 
     let wpm_over_time = Dataset::default()
         .marker(Marker::Braille)
@@ -147,9 +161,9 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
         .x_axis(
             Axis::default()
                 .title("seconds")
-                .bounds([1.0, overall_duration])
+                .bounds([first_second, overall_duration])
                 .labels([
-                    Span::styled("1", BOLD),
+                    Span::styled(format!("{first_second}"), BOLD),
                     Span::styled(format!("{overall_duration:.2}"), BOLD),
                 ]),
         )
@@ -182,6 +196,7 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::thok::Input;
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
     use std::time::{Duration, Instant};
@@ -323,6 +338,97 @@ mod tests {
     #[test]
     fn results_screen() {
         insta::assert_snapshot!(draw(&finished(), 80, 24));
+    }
+
+    /// The shape of issue #22: a 10 second test whose highest point, at
+    /// second 5, is 98.4 wpm, with lower points either side.
+    fn peak_with_a_fraction_below_one_half() -> Thok {
+        let mut thok = Thok::new(String::new(), 15, None);
+        thok.wpm_coords = vec![
+            (1.0, 36.0),
+            (2.0, 60.0),
+            (3.0, 78.0),
+            (4.0, 92.0),
+            (5.0, 98.4),
+            (6.0, 93.0),
+            (7.0, 91.0),
+            (8.0, 95.0),
+            (9.0, 97.9),
+            (10.0, 94.0),
+        ];
+        thok.wpm = 94.0;
+        thok.accuracy = 100.0;
+        thok.std_dev = 2.6;
+        thok
+    }
+
+    #[test]
+    fn results_chart_draws_a_peak_with_a_fraction_below_one_half() {
+        insta::assert_snapshot!(draw(&peak_with_a_fraction_below_one_half(), 100, 30));
+    }
+
+    #[test]
+    fn results_chart_of_a_test_shorter_than_a_second() {
+        // two keys, 0.2 s and 0.4 s after a start 0.5 s ago: one point, left of second 1
+        let mut thok = Thok::new("hi".to_string(), 1, None);
+        let started_at = Instant::now() - Duration::from_millis(500);
+        thok.started_at = Some(started_at);
+        for (c, ms) in [('h', 200), ('i', 400)] {
+            thok.input.push(Input {
+                char: c,
+                outcome: Outcome::Correct,
+                timestamp: started_at + Duration::from_millis(ms),
+            });
+        }
+        thok.calc_results();
+
+        let ([first_second, last_second], _) = chart_bounds(&thok);
+        assert_eq!((first_second, last_second), (0.0, 1.0));
+        assert!(thok.wpm_coords[0].0 < 1.0);
+    }
+
+    #[test]
+    fn every_point_of_generated_results_lies_inside_both_axes() {
+        // a small fixed-seed generator, so a failure can be run again
+        let mut seed: u64 = 22;
+        let mut next = |below: u64| {
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (seed >> 33) % below
+        };
+
+        for case in 0..500 {
+            // tests of 0.1 s to 12 s, 1 to 80 keys, about one in eight wrong
+            let duration_ms = 100 + next(11_900);
+            let keys = 1 + next(80) as usize;
+            let mut offsets: Vec<u64> = (0..keys).map(|_| next(duration_ms)).collect();
+            offsets.sort_unstable();
+
+            let mut thok = Thok::new("a".repeat(keys), 1, None);
+            let started_at = Instant::now() - Duration::from_millis(duration_ms);
+            thok.started_at = Some(started_at);
+            for ms in offsets {
+                thok.input.push(Input {
+                    char: 'a',
+                    outcome: if next(8) == 0 {
+                        Outcome::Incorrect
+                    } else {
+                        Outcome::Correct
+                    },
+                    timestamp: started_at + Duration::from_millis(ms),
+                });
+            }
+            thok.calc_results();
+
+            let ([left, right], [bottom, top]) = chart_bounds(&thok);
+            for &(secs, wpm) in &thok.wpm_coords {
+                assert!(
+                    (left..=right).contains(&secs) && (bottom..=top).contains(&wpm),
+                    "case {case}: ({secs}, {wpm}) is outside [{left}, {right}] x [{bottom}, {top}]"
+                );
+            }
+        }
     }
 
     #[test]
