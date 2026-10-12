@@ -250,3 +250,207 @@ impl Widget for &Thok {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::thok::Input;
+    use ratatui::{backend::TestBackend, Terminal};
+    use std::fmt::Write;
+    use std::time::{Duration, SystemTime};
+
+    const PROMPT: &str = "the quick brown fox jumps over the lazy dog";
+    const LONG_PROMPT: &str = "it was the best of times it was the worst of times it was the age of wisdom it was the age of foolishness it was the epoch of belief it was the epoch of incredulity";
+
+    /// Draws one frame the way `main::ui` does and returns it as text: the
+    /// characters, then one style letter per cell, then what each letter
+    /// means, then where the cursor is.
+    fn draw(thok: &Thok, width: u16, height: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        let mut cursor = None;
+        terminal
+            .draw(|f| {
+                f.render_widget(thok, f.area());
+                cursor = cursor_screen_position(thok, f.area());
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut styles: Vec<Style> = vec![ratatui::buffer::Cell::EMPTY.style()];
+        let mut text = String::new();
+        let mut style_map = String::new();
+        for y in 0..height {
+            for x in 0..width {
+                let cell = &buffer[(x, y)];
+                text.push_str(cell.symbol());
+                let style = cell.style();
+                let id = styles.iter().position(|s| *s == style).unwrap_or_else(|| {
+                    styles.push(style);
+                    styles.len() - 1
+                });
+                style_map.push(if id == 0 {
+                    '.'
+                } else {
+                    (b'a' + id as u8 - 1) as char
+                });
+            }
+            text.push('\n');
+            style_map.push('\n');
+        }
+
+        let mut out = format!("{text}\n{style_map}\n");
+        for (id, style) in styles.iter().enumerate().skip(1) {
+            let letter = (b'a' + id as u8 - 1) as char;
+            writeln!(
+                out,
+                "{letter} = fg {:?}, {:?}",
+                style.fg.unwrap(),
+                style.add_modifier
+            )
+            .unwrap();
+        }
+        writeln!(out, "cursor = {cursor:?}").unwrap();
+        out
+    }
+
+    /// Types `typed` against the prompt, the i-th key `offsets_ms[i]` after a
+    /// start that lies 60 seconds in the past.
+    fn typed(prompt: &str, typed: &str, secs: Option<f64>, offsets_ms: &[u64]) -> Thok {
+        let mut thok = Thok::new(prompt.to_string(), prompt.split(' ').count(), secs);
+        let started_at = SystemTime::now() - Duration::from_secs(60);
+        thok.started_at = Some(started_at);
+        for (i, c) in typed.chars().enumerate() {
+            let outcome = if c == thok.get_expected_char(i) {
+                Outcome::Correct
+            } else {
+                Outcome::Incorrect
+            };
+            thok.input.push(Input {
+                char: c,
+                outcome,
+                timestamp: started_at
+                    + Duration::from_millis(offsets_ms.get(i).copied().unwrap_or(0)),
+            });
+            thok.cursor_pos += 1;
+        }
+        thok
+    }
+
+    #[test]
+    fn running_fresh() {
+        let thok = Thok::new(PROMPT.to_string(), 9, None);
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn running_with_correct_and_incorrect_input() {
+        // "quick" typed as "quack", and the space after it typed as "x"
+        let thok = typed(PROMPT, "the quackxbr", None, &[]);
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn running_wraps_and_left_aligns_a_long_prompt() {
+        let thok = typed(
+            LONG_PROMPT,
+            "it was the best of times it was the worst of times it was the age of wisdom it w",
+            None,
+            &[],
+        );
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn running_in_a_narrow_terminal() {
+        let thok = typed(LONG_PROMPT, "it was the bust of times", None, &[]);
+        insta::assert_snapshot!(draw(&thok, 30, 14));
+    }
+
+    #[test]
+    fn running_in_a_terminal_too_small_for_the_prompt() {
+        let thok = typed(LONG_PROMPT, "it was", None, &[]);
+        insta::assert_snapshot!(draw(&thok, 20, 6));
+    }
+
+    #[test]
+    fn pace_caret_ahead_of_the_typist() {
+        // 12 wpm is one character a second; 5.5 seconds in, the caret is on index 5
+        let mut thok = typed(PROMPT, "the", None, &[]);
+        thok.pace_wpm = Some(12.0);
+        thok.started_at = Some(SystemTime::now() - Duration::from_millis(5500));
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn pace_caret_behind_the_typist() {
+        let mut thok = typed(PROMPT, "the quack br", None, &[]);
+        thok.pace_wpm = Some(12.0);
+        thok.started_at = Some(SystemTime::now() - Duration::from_millis(6500));
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn timed_test_shows_the_countdown() {
+        let mut thok = typed(PROMPT, "the qu", Some(30.0), &[]);
+        for _ in 0..17 {
+            thok.on_tick();
+        }
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn timed_test_in_a_narrow_terminal() {
+        let mut thok = typed(LONG_PROMPT, "it was the", Some(15.0), &[]);
+        for _ in 0..42 {
+            thok.on_tick();
+        }
+        insta::assert_snapshot!(draw(&thok, 30, 14));
+    }
+
+    fn finished() -> Thok {
+        let prompt = "the quick brown fox";
+        let offsets: Vec<u64> = [
+            150, 300, 420, 700, 900, 1100, 1350, 1500, 1800, 2400, 2550, 2700, 3100, 3300, 3450,
+            3900, 4200, 4600, 5250,
+        ]
+        .to_vec();
+        let mut thok = typed(prompt, "the quack brown fox", None, &offsets);
+        thok.calc_results();
+        thok
+    }
+
+    #[test]
+    fn results_screen() {
+        insta::assert_snapshot!(draw(&finished(), 80, 24));
+    }
+
+    #[test]
+    fn results_screen_in_a_narrow_terminal() {
+        insta::assert_snapshot!(draw(&finished(), 30, 14));
+    }
+
+    #[test]
+    fn results_screen_after_the_timer_ran_out() {
+        let mut thok = typed(
+            PROMPT,
+            "the quick brown",
+            Some(0.3),
+            &[
+                200, 400, 600, 900, 1200, 1500, 1800, 2100, 2400, 2700, 3000, 3300, 3600, 3900,
+                4200,
+            ],
+        );
+        for _ in 0..3 {
+            thok.on_tick();
+        }
+        assert!(thok.has_finished());
+        thok.calc_results();
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    #[test]
+    fn results_screen_for_an_empty_prompt() {
+        let thok = Thok::new(String::new(), 0, None);
+        insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+}
