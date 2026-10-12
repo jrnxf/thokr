@@ -201,10 +201,14 @@ mod tests {
     /// text: the characters, then one style letter per cell, then what each
     /// letter means, then where the cursor is.
     fn draw(thok: &Thok, width: u16, height: u16) -> String {
+        draw_frame(thok, true, width, height)
+    }
+
+    fn draw_frame(thok: &Thok, can_tweet: bool, width: u16, height: u16) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut cursor = None;
         terminal
-            .draw(|f| cursor = render(thok, true, f.area(), f.buffer_mut()))
+            .draw(|f| cursor = render(thok, can_tweet, f.area(), f.buffer_mut()))
             .unwrap();
 
         let buffer = terminal.backend().buffer();
@@ -353,6 +357,11 @@ mod tests {
     #[test]
     fn results_screen() {
         insta::assert_snapshot!(draw(&finished(), 80, 24));
+    }
+
+    #[test]
+    fn results_screen_without_a_browser() {
+        insta::assert_snapshot!(draw_frame(&finished(), false, 80, 24));
     }
 
     #[test]
