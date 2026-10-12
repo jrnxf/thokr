@@ -119,6 +119,8 @@ fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'st
 
 const LINE: Color = Color::Magenta;
 const FAINT: Style = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+/// What the seconds axis is called, under the wpm labels.
+const SEC: &str = "sec";
 
 /// The smallest of 1, 2, 5 x 10^n (and at least 1) that splits `span` into
 /// at most `max_intervals` steps.
@@ -162,7 +164,9 @@ fn wpm_scale(values: impl Iterator<Item = f64>, rows: u16) -> Scale {
         min = ((min + max) / 2.0 - 5.0).max(0.0);
         max = min + 10.0;
     }
-    let intervals = (rows as usize / 4).clamp(2, 6);
+    // a rule every four rows or so, and a row to each tick
+    let rows = rows as usize;
+    let intervals = (rows / 4).clamp(2, 6).min(rows.max(2) - 1);
     let mut step = nice_step(max - min, intervals);
     loop {
         let lo = (min / step).floor() * step;
@@ -182,6 +186,8 @@ fn wpm_scale(values: impl Iterator<Item = f64>, rows: u16) -> Scale {
 struct Plot {
     /// the plot itself
     area: Rect,
+    /// the columns left of the plot, for the wpm labels
+    gutter: u16,
     y: Scale,
     x0: f64,
     x1: f64,
@@ -193,12 +199,12 @@ impl Plot {
             coords.iter().map(|&(_, wpm)| wpm),
             chart.height.saturating_sub(1),
         );
+        // as wide as the longest wpm label, or as `sec` under them
         let gutter = y
             .ticks()
             .iter()
             .map(|v| format!("{v}").len())
-            .max()
-            .unwrap_or(1) as u16
+            .fold(SEC.len(), usize::max) as u16
             + 1;
         let first = coords.first().map_or(0.0, |&(secs, _)| secs);
         let last = coords.last().map_or(1.0, |&(secs, _)| secs);
@@ -217,6 +223,7 @@ impl Plot {
                 width: chart.width - gutter,
                 height: chart.height.saturating_sub(1),
             },
+            gutter,
             y,
             x0,
             x1,
@@ -276,7 +283,9 @@ impl Plot {
         if self.area.height == 0 || self.area.width == 0 {
             return;
         }
-        for wpm in self.y.ticks() {
+        // from the top; one row has room for the top tick alone
+        let ticks = self.y.ticks().into_iter().rev();
+        for wpm in ticks.take(self.area.height as usize) {
             let row = self.row(wpm);
             let label = format!("{wpm}");
             buf.set_string(
@@ -294,9 +303,7 @@ impl Plot {
         for (x, label) in self.seconds_labels() {
             buf.set_string(x, self.area.bottom(), &label, Style::new());
         }
-        if let Some(x) = self.area.x.checked_sub(4) {
-            buf.set_string(x, self.area.bottom(), "sec", FAINT);
-        }
+        buf.set_string(self.area.x - self.gutter, self.area.bottom(), SEC, FAINT);
     }
 
     /// The line, one quadrant block char to a 2x2 grid of dots.
@@ -646,14 +653,61 @@ mod tests {
 
     #[test]
     fn wpm_scale_has_few_enough_ticks_for_the_height() {
-        for rows in [1, 6, 12, 20, 40] {
+        for rows in [1, 2, 3, 6, 12, 20, 40] {
             let scale = wpm_scale([13.7, 171.2].into_iter(), rows);
-            let intervals = (rows as usize / 4).clamp(2, 6);
+            let ticks = scale.ticks().len();
             assert!(
-                scale.ticks().len() <= intervals + 1,
+                ticks <= (rows as usize / 4).clamp(2, 6) + 1,
                 "{rows} rows: {scale:?}"
             );
+            // a row to each tick, short of the two ends every scale has
+            assert!(ticks <= rows.max(2) as usize, "{rows} rows: {scale:?}");
             assert!(scale.lo <= 13.7 && 171.2 <= scale.hi);
+        }
+    }
+
+    /// The wpm labels of a drawn results chart, from the top: each as the
+    /// row it is in and its value.
+    fn wpm_labels(buf: &Buffer, plot: &Plot) -> Vec<(u16, f64)> {
+        (plot.area.y..plot.area.bottom())
+            .filter_map(|y| {
+                let left: String = (0..plot.area.x).map(|x| buf[(x, y)].symbol()).collect();
+                Some((y, left.trim().parse::<f64>().ok()?))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_wpm_label_is_on_the_rule_of_its_own_value() {
+        for thok in [finished(), peak_with_a_fraction_below_one_half()] {
+            // a terminal 9 rows high leaves the plot one row, 10 high two
+            for height in 9..=24 {
+                let chart = Rect::new(HORIZONTAL_MARGIN, VERTICAL_MARGIN, 70, height - 7);
+                let plot = Plot::new(&thok.wpm_coords, chart);
+                let labels = wpm_labels(&buffer(&thok, 80, height), &plot);
+                for &(y, wpm) in &labels {
+                    assert_eq!(plot.row(wpm), y, "{height} high: {wpm}");
+                }
+                // top to bottom they are the whole scale; one row has room
+                // for the top of it alone
+                let mut ticks = plot.y.ticks();
+                ticks.reverse();
+                if plot.area.height == 1 {
+                    ticks.truncate(1);
+                }
+                let drawn: Vec<f64> = labels.iter().map(|&(_, wpm)| wpm).collect();
+                assert_eq!(drawn, ticks, "{height} high");
+            }
+        }
+    }
+
+    #[test]
+    fn sec_starts_at_the_left_edge_of_the_chart() {
+        // wpm labels of two digits, then of three
+        for thok in [finished(), peak_with_a_fraction_below_one_half()] {
+            let chart = Rect::new(HORIZONTAL_MARGIN, VERTICAL_MARGIN, 70, 17);
+            let seconds = row_text(&buffer(&thok, 80, 24), chart.bottom() - 1);
+            assert_eq!(seconds.find("sec"), Some(chart.x as usize), "{seconds:?}");
         }
     }
 
