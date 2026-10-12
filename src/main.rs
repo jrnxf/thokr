@@ -6,17 +6,17 @@ mod util;
 
 use crate::{lang::Language, thok::Thok};
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser};
 use ratatui::{
+    Frame, Terminal,
     backend::{Backend, CrosstermBackend},
     crossterm::{
         cursor::SetCursorStyle,
         event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
         tty::IsTty,
     },
-    Frame, Terminal,
 };
 use std::{
     error::Error,
@@ -50,25 +50,12 @@ pub struct Cli {
     prompt: Option<String>,
 
     /// language to pull words from
-    #[arg(short = 'l', long, value_enum, default_value_t = SupportedLanguage::English)]
-    supported_language: SupportedLanguage,
+    #[arg(short = 'l', long, value_enum, default_value_t = Language::English)]
+    supported_language: Language,
 
     /// ghost caret pacing at this WPM to race against
     #[arg(long)]
     pace: Option<u16>,
-}
-
-#[derive(Debug, Copy, Clone, ValueEnum, strum_macros::Display)]
-enum SupportedLanguage {
-    English,
-    English1k,
-    English10k,
-}
-
-impl SupportedLanguage {
-    fn as_lang(&self) -> Language {
-        Language::new(self.to_string().to_lowercase())
-    }
 }
 
 #[derive(Debug)]
@@ -83,13 +70,10 @@ impl App {
         if let Some(p) = &cli.prompt {
             (p.clone(), cli.number_of_words)
         } else if let Some(n) = cli.number_of_sentences {
-            let language = cli.supported_language.as_lang();
-            let (s, count) = language.get_random_sentence(n);
-            (s.join(""), count)
+            lang::random_sentences(n)
         } else {
-            let language = cli.supported_language.as_lang();
             (
-                language.get_random(cli.number_of_words).join(" "),
+                cli.supported_language.random_words(cli.number_of_words),
                 cli.number_of_words,
             )
         }
@@ -274,25 +258,29 @@ fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
 
     if should_tick {
         let tick_x = tx.clone();
-        thread::spawn(move || loop {
-            if tick_x.send(ThokEvent::Tick).is_err() {
-                break;
-            }
+        thread::spawn(move || {
+            loop {
+                if tick_x.send(ThokEvent::Tick).is_err() {
+                    break;
+                }
 
-            thread::sleep(Duration::from_millis(TICK_RATE_MS))
+                thread::sleep(Duration::from_millis(TICK_RATE_MS))
+            }
         });
     }
 
-    thread::spawn(move || loop {
-        let evt = match event::read().unwrap() {
-            Event::Key(key) if key.kind == KeyEventKind::Press => Some(ThokEvent::Key(key)),
-            Event::Key(_) => None,
-            Event::Resize(_, _) => Some(ThokEvent::Resize),
-            _ => None,
-        };
+    thread::spawn(move || {
+        loop {
+            let evt = match event::read().unwrap() {
+                Event::Key(key) if key.kind == KeyEventKind::Press => Some(ThokEvent::Key(key)),
+                Event::Key(_) => None,
+                Event::Resize(_, _) => Some(ThokEvent::Resize),
+                _ => None,
+            };
 
-        if evt.is_some() && tx.send(evt.unwrap()).is_err() {
-            break;
+            if evt.is_some() && tx.send(evt.unwrap()).is_err() {
+                break;
+            }
         }
     });
 
