@@ -63,14 +63,16 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
 
     // when the prompt is small enough to fit on one line
     // centering the text gives a nice zen feeling
-    let centered = lines.len() == 1;
-    Paragraph::new(text)
-        .alignment(if centered {
-            Alignment::Center
-        } else {
-            Alignment::Left
-        })
-        .render(prompt_area, buf);
+    let x_offset = match text.as_slice() {
+        [line] => (prompt_area.width / 2).saturating_sub(line.width() as u16 / 2),
+        _ => 0,
+    };
+    let text_area = Rect {
+        x: prompt_area.x + x_offset,
+        width: prompt_area.width - x_offset,
+        ..prompt_area
+    };
+    Paragraph::new(text).render(text_area, buf);
 
     if let Some(secs) = thok.seconds_remaining {
         Paragraph::new(Span::styled(format!("{secs:.1}"), UNTYPED))
@@ -79,14 +81,6 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
     }
 
     let (line_no, col) = layout::char_cell(&lines, thok.input.len())?;
-    let x_offset = if centered {
-        prompt_area
-            .width
-            .saturating_sub(lines[line_no].len() as u16)
-            / 2
-    } else {
-        0
-    };
     Some(Position::new(
         prompt_area.x + x_offset + col,
         prompt_area.y + line_no as u16,
@@ -193,7 +187,6 @@ fn render_results(thok: &Thok, can_tweet: bool, area: Rect, buf: &mut Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thok::Input;
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
     use std::time::{Duration, Instant};
@@ -253,28 +246,6 @@ mod tests {
         out
     }
 
-    /// Types `typed` against the prompt, the i-th key `offsets_ms[i]` after a
-    /// start that lies 60 seconds in the past.
-    fn typed(prompt: &str, typed: &str, secs: Option<f64>, offsets_ms: &[u64]) -> Thok {
-        let mut thok = Thok::new(prompt.to_string(), prompt.split(' ').count(), secs);
-        let started_at = Instant::now() - Duration::from_secs(60);
-        thok.started_at = Some(started_at);
-        for (i, c) in typed.chars().enumerate() {
-            let outcome = if c == thok.get_expected_char(i) {
-                Outcome::Correct
-            } else {
-                Outcome::Incorrect
-            };
-            thok.input.push(Input {
-                char: c,
-                outcome,
-                timestamp: started_at
-                    + Duration::from_millis(offsets_ms.get(i).copied().unwrap_or(0)),
-            });
-        }
-        thok
-    }
-
     #[test]
     fn running_fresh() {
         let thok = Thok::new(PROMPT.to_string(), 9, None);
@@ -284,13 +255,13 @@ mod tests {
     #[test]
     fn running_with_correct_and_incorrect_input() {
         // "quick" typed as "quack", and the space after it typed as "x"
-        let thok = typed(PROMPT, "the quackxbr", None, &[]);
+        let thok = Thok::typed(PROMPT, "the quackxbr", None, &[]);
         insta::assert_snapshot!(draw(&thok, 80, 24));
     }
 
     #[test]
     fn running_wraps_and_left_aligns_a_long_prompt() {
-        let thok = typed(
+        let thok = Thok::typed(
             LONG_PROMPT,
             "it was the best of times it was the worst of times it was the age of wisdom it w",
             None,
@@ -301,36 +272,36 @@ mod tests {
 
     #[test]
     fn running_in_a_narrow_terminal() {
-        let thok = typed(LONG_PROMPT, "it was the bust of times", None, &[]);
+        let thok = Thok::typed(LONG_PROMPT, "it was the bust of times", None, &[]);
         insta::assert_snapshot!(draw(&thok, 30, 14));
     }
 
     #[test]
     fn running_in_a_terminal_too_small_for_the_prompt() {
-        let thok = typed(LONG_PROMPT, "it was", None, &[]);
+        let thok = Thok::typed(LONG_PROMPT, "it was", None, &[]);
         insta::assert_snapshot!(draw(&thok, 20, 6));
     }
 
     #[test]
     fn pace_caret_ahead_of_the_typist() {
-        // 12 wpm is one character a second; 5.5 seconds in, the caret is on index 5
-        let mut thok = typed(PROMPT, "the", None, &[]);
-        thok.pace_wpm = Some(12.0);
-        thok.started_at = Some(Instant::now() - Duration::from_millis(5500));
+        // 1.2 wpm is one character every 10 seconds; 55 seconds in, the caret is on index 5
+        let mut thok = Thok::typed(PROMPT, "the", None, &[]);
+        thok.pace_wpm = Some(1.2);
+        thok.started_at = Some(Instant::now() - Duration::from_secs(55));
         insta::assert_snapshot!(draw(&thok, 80, 24));
     }
 
     #[test]
     fn pace_caret_behind_the_typist() {
-        let mut thok = typed(PROMPT, "the quack br", None, &[]);
-        thok.pace_wpm = Some(12.0);
-        thok.started_at = Some(Instant::now() - Duration::from_millis(6500));
+        let mut thok = Thok::typed(PROMPT, "the quack br", None, &[]);
+        thok.pace_wpm = Some(1.2);
+        thok.started_at = Some(Instant::now() - Duration::from_secs(65));
         insta::assert_snapshot!(draw(&thok, 80, 24));
     }
 
     #[test]
     fn timed_test_shows_the_countdown() {
-        let mut thok = typed(PROMPT, "the qu", Some(30.0), &[]);
+        let mut thok = Thok::typed(PROMPT, "the qu", Some(30.0), &[]);
         for _ in 0..17 {
             thok.on_tick();
         }
@@ -339,7 +310,7 @@ mod tests {
 
     #[test]
     fn timed_test_in_a_narrow_terminal() {
-        let mut thok = typed(LONG_PROMPT, "it was the", Some(15.0), &[]);
+        let mut thok = Thok::typed(LONG_PROMPT, "it was the", Some(15.0), &[]);
         for _ in 0..42 {
             thok.on_tick();
         }
@@ -353,7 +324,7 @@ mod tests {
             3900, 4200, 4600, 5250,
         ]
         .to_vec();
-        let mut thok = typed(prompt, "the quack brown fox", None, &offsets);
+        let mut thok = Thok::typed(prompt, "the quack brown fox", None, &offsets);
         thok.calc_results();
         thok
     }
@@ -375,7 +346,7 @@ mod tests {
 
     #[test]
     fn results_screen_after_the_timer_ran_out() {
-        let mut thok = typed(
+        let mut thok = Thok::typed(
             PROMPT,
             "the quick brown",
             Some(0.3),

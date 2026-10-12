@@ -55,4 +55,4 @@ expression: "draw(&thok, 80, 24)"
 a = fg Green, BOLD
 b = fg Red, BOLD
 c = fg Reset, BOLD | DIM
-cursor = Some(Position { x: 30, y: 11 })
+cursor = Some(Position { x: 31, y: 11 })

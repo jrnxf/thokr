@@ -53,4 +53,4 @@ expression: "draw(&thok, 80, 24)"
 ................................................................................
 
 a = fg Reset, BOLD | DIM
-cursor = Some(Position { x: 18, y: 11 })
+cursor = Some(Position { x: 19, y: 11 })
