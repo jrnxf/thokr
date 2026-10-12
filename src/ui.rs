@@ -178,6 +178,14 @@ fn wpm_scale(values: impl Iterator<Item = f64>, rows: u16) -> Scale {
     }
 }
 
+/// The cell, of `cells` in a line, that the canvas draws a point in when the
+/// point is `offset` into an axis `span` long: the canvas rounds to a dot, two
+/// to a cell.
+fn canvas_cell(offset: f64, span: f64, cells: u16) -> u16 {
+    let dots = f64::from(cells) * 2.0;
+    (offset * (dots - 1.0) / span).round() as u16 / 2
+}
+
 /// Where the plot goes once the wpm labels (left) and the seconds labels
 /// (bottom row) are taken out of the chart area, and what its axes span.
 /// No point of the results lies outside the axes: the canvas cuts a line off
@@ -232,14 +240,12 @@ impl Plot {
 
     /// The column of a second.
     fn col(&self, secs: f64) -> u16 {
-        let t = (secs - self.x0) / (self.x1 - self.x0);
-        self.area.x + (t * self.area.width.saturating_sub(1) as f64).round() as u16
+        self.area.x + canvas_cell(secs - self.x0, self.x1 - self.x0, self.area.width)
     }
 
     /// The row of a wpm value.
     fn row(&self, wpm: f64) -> u16 {
-        let t = (self.y.hi - wpm) / (self.y.hi - self.y.lo);
-        self.area.y + (t * self.area.height.saturating_sub(1) as f64).round() as u16
+        self.area.y + canvas_cell(self.y.hi - wpm, self.y.hi - self.y.lo, self.area.height)
     }
 
     /// The seconds labels, each as the column it starts in and its text:
@@ -251,7 +257,14 @@ impl Plot {
         let step = if span < 2.0 {
             0.5
         } else {
-            nice_step(span, intervals)
+            // a step past the last second has no label: one more interval
+            // brings it back under
+            let step = nice_step(span, intervals);
+            if step > self.x1 {
+                nice_step(span, intervals + 1)
+            } else {
+                step
+            }
         };
         let mut secs = (self.x0 / step).ceil() * step;
         if secs == 0.0 {
@@ -731,6 +744,69 @@ mod tests {
                 assert!(*x > end || end == 0, "{label} touches the label before it");
                 assert!(*x + label.len() as u16 <= plot.area.right());
                 end = *x + label.len() as u16;
+            }
+        }
+    }
+
+    #[test]
+    fn the_seconds_axis_has_a_label_at_every_length() {
+        // tests that end anywhere from 1.1 to 60 seconds, and some of 400 to
+        // 500, as a line and as one point alone
+        for tenths in (11..=600).chain([4015, 4500, 4999]) {
+            let last = tenths as f64 / 10.0;
+            for coords in [vec![(1.0, 40.0), (last, 40.0)], vec![(last, 40.0)]] {
+                // the wpm labels take 4 columns of the chart: plots 3 to 30
+                // columns wide, room for any of these labels
+                for width in 7..=34 {
+                    let plot = Plot::new(&coords, Rect::new(0, 0, width, 20));
+                    assert!(
+                        !plot.seconds_labels().is_empty(),
+                        "{coords:?} in a chart {width} wide"
+                    );
+                }
+            }
+        }
+    }
+
+    /// The cell of a plot that the canvas draws a point in.
+    fn drawn_cell(plot: &Plot, secs: f64, wpm: f64) -> (u16, u16) {
+        let mut buf = Buffer::empty(plot.area);
+        // a line from the point to itself is one dot
+        plot.draw_line(&[(secs, wpm), (secs, wpm)], &mut buf);
+        let cells: Vec<(u16, u16)> = (plot.area.y..plot.area.bottom())
+            .flat_map(|y| (plot.area.x..plot.area.right()).map(move |x| (x, y)))
+            .filter(|&pos| buf[pos].symbol() != " ")
+            .collect();
+        assert_eq!(cells.len(), 1, "one point");
+        cells[0]
+    }
+
+    #[test]
+    fn a_second_is_in_the_column_the_line_has_it_in() {
+        // terminals 80 and 100 columns wide, tests of 3 to 60 seconds
+        for width in [70, 90] {
+            for last in 3..=60 {
+                let coords = [(1.0, 40.0), (last as f64, 40.0)];
+                let plot = Plot::new(&coords, Rect::new(0, 0, width, 17));
+                for secs in 1..=last {
+                    let secs = secs as f64;
+                    let (x, _) = drawn_cell(&plot, secs, 40.0);
+                    assert_eq!(plot.col(secs), x, "second {secs} of {last}, {width} wide");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_wpm_tick_is_in_the_row_the_line_has_it_in() {
+        for thok in [finished(), peak_with_a_fraction_below_one_half()] {
+            // terminals 9 to 40 rows high
+            for height in 2..=33 {
+                let plot = Plot::new(&thok.wpm_coords, Rect::new(0, 0, 70, height));
+                for wpm in plot.y.ticks() {
+                    let (_, y) = drawn_cell(&plot, 1.0, wpm);
+                    assert_eq!(plot.row(wpm), y, "{wpm} wpm, {height} high");
+                }
             }
         }
     }
