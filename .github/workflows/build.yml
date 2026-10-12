@@ -48,3 +48,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
+
+  formula-changes:
+    name: formula-changes
+    runs-on: ubuntu-latest
+    outputs:
+      formula: ${{ steps.filter.outputs.formula }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            formula:
+              - 'Formula/**'
+              - '.github/workflows/build.yml'
+
+  homebrew:
+    name: homebrew
+    needs: formula-changes
+    if: needs.formula-changes.outputs.formula == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: tap this checkout
+        run: brew tap jrnxf/thokr "$GITHUB_WORKSPACE"
+      - name: install
+        run: brew install --build-from-source jrnxf/thokr/thokr
+      - name: test
+        run: brew test jrnxf/thokr/thokr
+      - name: audit
+        run: brew audit --strict jrnxf/thokr/thokr
