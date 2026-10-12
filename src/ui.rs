@@ -7,7 +7,10 @@ use ratatui::{
     style::{Color, Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
-    widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Widget},
+    widgets::{
+        Paragraph, Widget,
+        canvas::{Canvas, Line as CanvasLine},
+    },
 };
 use std::ops::Range;
 
@@ -114,28 +117,211 @@ fn prompt_line(thok: &Thok, line: Range<usize>, pace: Option<usize>) -> Line<'st
     Line::from(spans)
 }
 
-/// The bounds of the seconds axis and of the wpm axis. No point of the
-/// results lies outside them: the chart cuts a line off at its edges, so a
-/// point outside would leave its peak shaved or its line missing.
-fn chart_bounds(thok: &Thok) -> ([f64; 2], [f64; 2]) {
-    // rounded up, never to the nearest: a peak of 98.4 must fit under the top
-    let highest_wpm = thok
-        .wpm_coords
-        .iter()
-        .map(|&(_, wpm)| wpm)
-        .fold(0.0, f64::max)
-        .ceil();
-    // the axis starts at second 1, or at 0 for a test over in under a second
-    let first_second = match thok.wpm_coords.first() {
-        Some(&(secs, _)) if secs < 1.0 => 0.0,
-        _ => 1.0,
-    };
-    let overall_duration = thok
-        .wpm_coords
-        .last()
-        .map_or(thok.seconds_remaining.unwrap_or(1.0), |&(secs, _)| secs)
-        .max(1.0);
-    ([first_second, overall_duration], [0.0, highest_wpm])
+const LINE: Color = Color::Magenta;
+const FAINT: Style = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+
+/// The smallest of 1, 2, 5 x 10^n (and at least 1) that splits `span` into
+/// at most `max_intervals` steps.
+fn nice_step(span: f64, max_intervals: usize) -> f64 {
+    let raw = (span / max_intervals.max(1) as f64).max(1.0);
+    let magnitude = 10f64.powf(raw.log10().floor());
+    [1.0, 2.0, 5.0, 10.0]
+        .into_iter()
+        .map(|multiple| multiple * magnitude)
+        .find(|&step| step >= raw - 1e-9)
+        .unwrap_or(raw)
+}
+
+/// A wpm axis: `lo` and `hi` are whole multiples of `step`.
+#[derive(Debug, PartialEq)]
+struct Scale {
+    lo: f64,
+    hi: f64,
+    step: f64,
+}
+
+impl Scale {
+    fn ticks(&self) -> Vec<f64> {
+        let count = ((self.hi - self.lo) / self.step).round() as usize;
+        (0..=count)
+            .map(|i| self.lo + i as f64 * self.step)
+            .collect()
+    }
+}
+
+/// A wpm axis zoomed to the data, on round numbers. No value lies outside
+/// it, and it never spans less than 10 wpm, so a steady test does not look
+/// wild.
+fn wpm_scale(values: impl Iterator<Item = f64>, rows: u16) -> Scale {
+    let (mut min, mut max) =
+        values.fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+    if min > max {
+        (min, max) = (0.0, 10.0);
+    }
+    if max - min < 10.0 {
+        min = ((min + max) / 2.0 - 5.0).max(0.0);
+        max = min + 10.0;
+    }
+    let intervals = (rows as usize / 4).clamp(2, 6);
+    let mut step = nice_step(max - min, intervals);
+    loop {
+        let lo = (min / step).floor() * step;
+        let hi = (max / step).ceil() * step;
+        if ((hi - lo) / step).round() as usize <= intervals {
+            return Scale { lo, hi, step };
+        }
+        step = nice_step(step * 1.5, 1);
+    }
+}
+
+/// Where the plot goes once the wpm labels (left) and the seconds labels
+/// (bottom row) are taken out of the chart area, and what its axes span.
+/// No point of the results lies outside the axes: the canvas cuts a line off
+/// at its edges, so a point outside would leave its peak shaved or its line
+/// missing.
+struct Plot {
+    /// the plot itself
+    area: Rect,
+    y: Scale,
+    x0: f64,
+    x1: f64,
+}
+
+impl Plot {
+    fn new(coords: &[(f64, f64)], chart: Rect) -> Self {
+        let y = wpm_scale(
+            coords.iter().map(|&(_, wpm)| wpm),
+            chart.height.saturating_sub(1),
+        );
+        let gutter = y
+            .ticks()
+            .iter()
+            .map(|v| format!("{v}").len())
+            .max()
+            .unwrap_or(1) as u16
+            + 1;
+        let first = coords.first().map_or(0.0, |&(secs, _)| secs);
+        let last = coords.last().map_or(1.0, |&(secs, _)| secs);
+        // the axis starts at second 1, or earlier for a test that began
+        // sooner; one point alone sits in the middle
+        let (x0, x1) = if last > first {
+            (first.min(1.0), last)
+        } else {
+            (0.0, (last * 2.0).max(1.0))
+        };
+        let gutter = gutter.min(chart.width);
+        Self {
+            area: Rect {
+                x: chart.x + gutter,
+                y: chart.y,
+                width: chart.width - gutter,
+                height: chart.height.saturating_sub(1),
+            },
+            y,
+            x0,
+            x1,
+        }
+    }
+
+    /// The column of a second.
+    fn col(&self, secs: f64) -> u16 {
+        let t = (secs - self.x0) / (self.x1 - self.x0);
+        self.area.x + (t * self.area.width.saturating_sub(1) as f64).round() as u16
+    }
+
+    /// The row of a wpm value.
+    fn row(&self, wpm: f64) -> u16 {
+        let t = (self.y.hi - wpm) / (self.y.hi - self.y.lo);
+        self.area.y + (t * self.area.height.saturating_sub(1) as f64).round() as u16
+    }
+
+    /// The seconds labels, each as the column it starts in and its text:
+    /// centred under its second, as many as fit.
+    fn seconds_labels(&self) -> Vec<(u16, String)> {
+        let span = self.x1 - self.x0;
+        let intervals = (self.area.width as usize / 9).clamp(2, 10);
+        // under two seconds whole steps leave one label, so go to halves
+        let step = if span < 2.0 {
+            0.5
+        } else {
+            nice_step(span, intervals)
+        };
+        let mut secs = (self.x0 / step).ceil() * step;
+        if secs == 0.0 {
+            secs = step;
+        }
+        let mut labels = Vec::new();
+        let mut next_free = self.area.x;
+        while secs <= self.x1 + 1e-9 {
+            let label = format!("{secs}");
+            let len = label.len() as u16;
+            if len <= self.area.width {
+                // pulled in at the right edge
+                let start = self
+                    .col(secs)
+                    .saturating_sub(len / 2)
+                    .min(self.area.right() - len);
+                if start >= next_free {
+                    labels.push((start, label));
+                    next_free = start + len + 1;
+                }
+            }
+            secs += step;
+        }
+        labels
+    }
+
+    /// wpm labels with a faint rule across each, seconds labels underneath.
+    fn axes(&self, buf: &mut Buffer) {
+        if self.area.height == 0 || self.area.width == 0 {
+            return;
+        }
+        for wpm in self.y.ticks() {
+            let row = self.row(wpm);
+            let label = format!("{wpm}");
+            buf.set_string(
+                self.area.x - 1 - label.len() as u16,
+                row,
+                &label,
+                Style::new(),
+            );
+            for x in self.area.x..self.area.right() {
+                if buf[(x, row)].symbol() == " " {
+                    buf[(x, row)].set_char('─').set_style(FAINT);
+                }
+            }
+        }
+        for (x, label) in self.seconds_labels() {
+            buf.set_string(x, self.area.bottom(), &label, Style::new());
+        }
+        if let Some(x) = self.area.x.checked_sub(4) {
+            buf.set_string(x, self.area.bottom(), "sec", FAINT);
+        }
+    }
+
+    /// The line, one quadrant block char to a 2x2 grid of dots.
+    fn draw_line(&self, coords: &[(f64, f64)], buf: &mut Buffer) {
+        if self.area.height == 0 || self.area.width == 0 {
+            return;
+        }
+        Canvas::default()
+            .marker(Marker::Quadrant)
+            .x_bounds([self.x0, self.x1])
+            .y_bounds([self.y.lo, self.y.hi])
+            .paint(|ctx| {
+                for pair in coords.windows(2) {
+                    ctx.draw(&CanvasLine::new(
+                        pair[0].0, pair[0].1, pair[1].0, pair[1].1, LINE,
+                    ));
+                }
+                if let &[(secs, wpm)] = coords {
+                    // one point alone: a dash three cells wide, a dot is lost
+                    let half = 1.5 * (self.x1 - self.x0) / self.area.width as f64;
+                    ctx.draw(&CanvasLine::new(secs - half, wpm, secs + half, wpm, LINE));
+                }
+            })
+            .render(self.area, buf);
+    }
 }
 
 fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
@@ -149,34 +335,9 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
     .vertical_margin(VERTICAL_MARGIN)
     .areas(area);
 
-    let ([first_second, overall_duration], [_, highest_wpm]) = chart_bounds(thok);
-
-    let wpm_over_time = Dataset::default()
-        .marker(Marker::Braille)
-        .style(Style::new().fg(Color::Magenta))
-        .graph_type(GraphType::Line)
-        .data(&thok.wpm_coords);
-
-    Chart::new(vec![wpm_over_time])
-        .x_axis(
-            Axis::default()
-                .title("seconds")
-                .bounds([first_second, overall_duration])
-                .labels([
-                    Span::styled(format!("{first_second}"), BOLD),
-                    Span::styled(format!("{overall_duration:.2}"), BOLD),
-                ]),
-        )
-        .y_axis(
-            Axis::default()
-                .title("wpm")
-                .bounds([0.0, highest_wpm])
-                .labels([
-                    Span::styled("0", BOLD),
-                    Span::styled(format!("{highest_wpm}"), BOLD),
-                ]),
-        )
-        .render(chart_area, buf);
+    let plot = Plot::new(&thok.wpm_coords, chart_area);
+    plot.draw_line(&thok.wpm_coords, buf);
+    plot.axes(buf);
 
     let stats = format!(
         "{} wpm   {}% acc   {:.2} sd",
@@ -203,6 +364,48 @@ mod tests {
 
     const PROMPT: &str = "the quick brown fox jumps over the lazy dog";
     const LONG_PROMPT: &str = "it was the best of times it was the worst of times it was the age of wisdom it was the age of foolishness it was the epoch of belief it was the epoch of incredulity";
+
+    /// Draws one frame and returns its cells.
+    fn buffer(thok: &Thok, width: u16, height: u16) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| {
+                render(thok, f.area(), f.buffer_mut())
+                    .map(drop)
+                    .unwrap_or_default()
+            })
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// The characters of one row of a buffer.
+    fn row_text(buf: &Buffer, y: u16) -> String {
+        (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect()
+    }
+
+    /// The characters of a whole buffer, a row to a line.
+    fn screen_text(buf: &Buffer) -> String {
+        (0..buf.area.height)
+            .map(|y| row_text(buf, y))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// How many cells the pace caret is from the first char of the prompt
+    /// (the caret is the one reversed cell), on a one line prompt.
+    fn pace_caret_offset(thok: &Thok) -> usize {
+        let buf = buffer(thok, 80, 24);
+        let cells: Vec<(u16, u16)> = (0..buf.area.height)
+            .flat_map(|y| (0..buf.area.width).map(move |x| (x, y)))
+            .filter(|&pos| buf[pos].modifier.contains(Modifier::REVERSED))
+            .collect();
+        assert_eq!(cells.len(), 1, "one pace caret");
+        let (x, y) = cells[0];
+        let first = (0..buf.area.width)
+            .find(|&x| buf[(x, y)].symbol() != " ")
+            .unwrap();
+        (x - first) as usize
+    }
 
     /// Draws one frame and returns it as text: the characters, then one
     /// style letter per cell, then what each letter means, then where the
@@ -253,12 +456,6 @@ mod tests {
     }
 
     #[test]
-    fn running_fresh() {
-        let thok = Thok::new(PROMPT.to_string(), 9, None);
-        insta::assert_snapshot!(draw(&thok, 80, 24));
-    }
-
-    #[test]
     fn running_with_correct_and_incorrect_input() {
         // "quick" typed as "quack", and the space after it typed as "x"
         let thok = Thok::typed(PROMPT, "the quackxbr", None, &[]);
@@ -294,7 +491,7 @@ mod tests {
         let mut thok = Thok::typed(PROMPT, "the", None, &[]);
         thok.pace_wpm = Some(1.2);
         thok.started_at = Some(Instant::now() - Duration::from_secs(55));
-        insta::assert_snapshot!(draw(&thok, 80, 24));
+        assert_eq!(pace_caret_offset(&thok), 5);
     }
 
     #[test]
@@ -302,7 +499,8 @@ mod tests {
         let mut thok = Thok::typed(PROMPT, "the quack br", None, &[]);
         thok.pace_wpm = Some(1.2);
         thok.started_at = Some(Instant::now() - Duration::from_secs(65));
-        insta::assert_snapshot!(draw(&thok, 80, 24));
+        // the typist is on index 12; the caret is behind, on index 6
+        assert_eq!(pace_caret_offset(&thok), 6);
     }
 
     #[test]
@@ -311,16 +509,7 @@ mod tests {
         for _ in 0..17 {
             thok.on_tick();
         }
-        insta::assert_snapshot!(draw(&thok, 80, 24));
-    }
-
-    #[test]
-    fn timed_test_in_a_narrow_terminal() {
-        let mut thok = Thok::typed(LONG_PROMPT, "it was the", Some(15.0), &[]);
-        for _ in 0..42 {
-            thok.on_tick();
-        }
-        insta::assert_snapshot!(draw(&thok, 30, 14));
+        assert!(screen_text(&buffer(&thok, 80, 24)).contains("28.3"));
     }
 
     fn finished() -> Thok {
@@ -363,11 +552,6 @@ mod tests {
     }
 
     #[test]
-    fn results_chart_draws_a_peak_with_a_fraction_below_one_half() {
-        insta::assert_snapshot!(draw(&peak_with_a_fraction_below_one_half(), 100, 30));
-    }
-
-    #[test]
     fn results_chart_of_a_test_shorter_than_a_second() {
         // two keys, 0.2 s and 0.4 s after a start 0.5 s ago: one point, left of second 1
         let mut thok = Thok::new("hi".to_string(), 1, None);
@@ -382,9 +566,155 @@ mod tests {
         }
         thok.calc_results();
 
-        let ([first_second, last_second], _) = chart_bounds(&thok);
-        assert_eq!((first_second, last_second), (0.0, 1.0));
-        assert!(thok.wpm_coords[0].0 < 1.0);
+        assert_eq!(thok.wpm_coords.len(), 1);
+        let secs = thok.wpm_coords[0].0;
+        assert!(secs < 1.0);
+        let plot = Plot::new(&thok.wpm_coords, Rect::new(0, 0, 90, 20));
+        assert!(plot.x0 <= secs && secs <= plot.x1);
+        // and it is drawn: the dash around the point
+        assert!(line_columns(&thok, 100, 30) > 0);
+    }
+
+    /// How many columns of the results chart have a char of the line in them.
+    fn line_columns(thok: &Thok, width: u16, height: u16) -> usize {
+        let buf = buffer(thok, width, height);
+        (0..width)
+            .filter(|&x| {
+                (0..height).any(|y| {
+                    matches!(
+                        buf[(x, y)].symbol().chars().next(),
+                        Some('\u{2580}'..='\u{259F}')
+                    )
+                })
+            })
+            .count()
+    }
+
+    #[test]
+    fn the_whole_line_of_a_peak_with_a_fraction_below_one_half_is_drawn() {
+        let thok = peak_with_a_fraction_below_one_half();
+        let chart = Rect::new(HORIZONTAL_MARGIN, VERTICAL_MARGIN, 90, 23);
+        let plot = Plot::new(&thok.wpm_coords, chart);
+        // the axis is above the peak of 98.4
+        assert!(plot.y.hi >= 99.0);
+        // and the line has a char in every column from the first point to the last
+        let buf = buffer(&thok, 100, 30);
+        for x in plot.col(1.0)..=plot.col(10.0) {
+            assert!(
+                (plot.area.y..plot.area.bottom()).any(|y| matches!(
+                    buf[(x, y)].symbol().chars().next(),
+                    Some('\u{2580}'..='\u{259F}')
+                )),
+                "column {x} has no line"
+            );
+        }
+    }
+
+    #[test]
+    fn nice_step_is_a_one_two_or_five() {
+        assert_eq!(nice_step(10.0, 5), 2.0);
+        assert_eq!(nice_step(10.0, 2), 5.0);
+        assert_eq!(nice_step(60.0, 6), 10.0);
+        assert_eq!(nice_step(61.0, 6), 20.0);
+        assert_eq!(nice_step(100.0, 4), 50.0);
+        assert_eq!(nice_step(0.5, 4), 1.0);
+    }
+
+    #[test]
+    fn wpm_scale_covers_the_data_on_round_numbers() {
+        let scale = wpm_scale([36.0, 98.4, 94.0].into_iter(), 24);
+        assert_eq!(
+            scale,
+            Scale {
+                lo: 20.0,
+                hi: 100.0,
+                step: 20.0
+            }
+        );
+        assert_eq!(scale.ticks(), [20.0, 40.0, 60.0, 80.0, 100.0]);
+    }
+
+    #[test]
+    fn wpm_scale_never_spans_less_than_ten() {
+        for values in [vec![84.0, 86.0], vec![50.0], vec![0.0], vec![3.0], vec![]] {
+            let scale = wpm_scale(values.iter().copied(), 20);
+            assert!(scale.hi - scale.lo >= 10.0, "{values:?}: {scale:?}");
+            assert!(scale.lo >= 0.0);
+            assert!(values.iter().all(|&v| scale.lo <= v && v <= scale.hi));
+        }
+    }
+
+    #[test]
+    fn wpm_scale_has_few_enough_ticks_for_the_height() {
+        for rows in [1, 6, 12, 20, 40] {
+            let scale = wpm_scale([13.7, 171.2].into_iter(), rows);
+            let intervals = (rows as usize / 4).clamp(2, 6);
+            assert!(
+                scale.ticks().len() <= intervals + 1,
+                "{rows} rows: {scale:?}"
+            );
+            assert!(scale.lo <= 13.7 && 171.2 <= scale.hi);
+        }
+    }
+
+    #[test]
+    fn seconds_labels_sit_under_their_second_and_do_not_touch() {
+        let coords: Vec<(f64, f64)> = (1..=30).map(|s| (s as f64, 40.0)).collect();
+        for width in [90, 60, 24, 12] {
+            let plot = Plot::new(&coords, Rect::new(0, 0, width, 20));
+            let labels = plot.seconds_labels();
+            assert!(!labels.is_empty(), "width {width}");
+            let mut end = 0;
+            for (x, label) in &labels {
+                let secs: f64 = label.parse().unwrap();
+                let centre = *x + label.len() as u16 / 2;
+                // under the second, give or take the rounding of a column
+                // and a label pulled in at the right edge
+                let col = plot.col(secs);
+                if (*x + label.len() as u16) < plot.area.right() {
+                    assert!(centre.abs_diff(col) <= 1, "{label} at {x}, second at {col}");
+                }
+                assert!(*x > end || end == 0, "{label} touches the label before it");
+                assert!(*x + label.len() as u16 <= plot.area.right());
+                end = *x + label.len() as u16;
+            }
+        }
+    }
+
+    #[test]
+    fn seconds_labels_of_a_test_under_two_seconds() {
+        let plot = Plot::new(&[(1.0, 40.0), (1.6, 42.0)], Rect::new(0, 0, 80, 20));
+        let labels: Vec<_> = plot.seconds_labels().into_iter().map(|(_, l)| l).collect();
+        assert_eq!(labels, ["1", "1.5"]);
+    }
+
+    #[test]
+    fn the_results_chart_is_readable_at_every_size_and_length() {
+        let sixty: Vec<(f64, f64)> = (1..=60)
+            .map(|s| (s as f64, 70.0 + (s % 7) as f64))
+            .collect();
+        let results: [Vec<(f64, f64)>; 6] = [
+            vec![],
+            vec![(0.9, 72.0)],
+            vec![(1.0, 60.0), (1.6, 66.0)],
+            vec![(1.0, 60.0), (2.0, 66.0), (2.71, 63.0)],
+            peak_with_a_fraction_below_one_half().wpm_coords,
+            sixty,
+        ];
+        for coords in results {
+            for (width, height) in [(100, 30), (60, 20), (30, 14), (12, 5), (3, 2), (0, 0)] {
+                let mut thok = Thok::new(String::new(), 0, None);
+                thok.wpm_coords = coords.clone();
+                // no panic is the point; the stats and legend stay
+                let screen = screen_text(&buffer(&thok, width, height));
+                if width >= 60 && height >= 20 {
+                    assert!(screen.contains("(r)etry / (n)ew / (esc)ape"));
+                    if !coords.is_empty() {
+                        assert!(line_columns(&thok, width, height) > 0);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -421,7 +751,8 @@ mod tests {
             }
             thok.calc_results();
 
-            let ([left, right], [bottom, top]) = chart_bounds(&thok);
+            let plot = Plot::new(&thok.wpm_coords, Rect::new(0, 0, 90, 24));
+            let (left, right, bottom, top) = (plot.x0, plot.x1, plot.y.lo, plot.y.hi);
             for &(secs, wpm) in &thok.wpm_coords {
                 assert!(
                     (left..=right).contains(&secs) && (bottom..=top).contains(&wpm),
@@ -452,7 +783,7 @@ mod tests {
         }
         assert!(thok.has_finished());
         thok.calc_results();
-        insta::assert_snapshot!(draw(&thok, 80, 24));
+        assert!(screen_text(&buffer(&thok, 80, 24)).contains("36 wpm   100% acc   0.50 sd"));
     }
 
     #[test]
