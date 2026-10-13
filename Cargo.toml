@@ -9,7 +9,7 @@ license = "MIT"
 authors = ["Colby Thomas <colby@jrnxf.co>"]
 edition = "2024"
 rust-version = "1.88"
-exclude = [".github", "*.log", "plans"]
+exclude = [".github", "*.log", "plans", "assets"]
 keywords = ["tui", "terminal", "typing"]
 
 [dependencies]
