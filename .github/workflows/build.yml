@@ -78,4 +78,5 @@ jobs:
       - name: test
         run: brew test jrnxf/thokr/thokr
       - name: audit
-        run: brew audit --strict jrnxf/thokr/thokr
+        # the lowercase description is the owner's choice, so skip only the FormulaAudit/Desc cop
+        run: brew audit --strict --except-cops=FormulaAudit/Desc jrnxf/thokr/thokr
