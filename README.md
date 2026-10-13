@@ -7,7 +7,7 @@
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
 [![Github Stars](https://img.shields.io/github/stars/jrnxf/thokr)](https://github.com/jrnxf/thokr/stargazers)
 
-![demo](https://github.com/jrnxf/assets/raw/main/thokr/demo-v2.gif)
+![demo](./assets/demo.gif)
 
 ## Installation
 
