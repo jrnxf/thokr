@@ -20,8 +20,7 @@ $ cargo install thokr
 ### Homebrew
 
 ```sh
-$ brew tap jrnxf/thokr https://github.com/jrnxf/thokr
-$ brew install thokr
+$ brew install jrnxf/tap/thokr
 ```
 
 The formula builds thokr from source, so it needs a Rust toolchain (Homebrew
@@ -135,8 +134,9 @@ also simply open an issue and select `Feature Request`
 5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
 
-Maintainers: after publishing a release, run `scripts/bump-formula.sh <version>`
-and commit the updated `Formula/thokr.rb`.
+Maintainers: publishing a release publishes the crate and then updates the
+formula in [jrnxf/homebrew-tap](https://github.com/jrnxf/homebrew-tap)
+automatically.
 
 See the [open issues](https://github.com/jrnxf/thokr/issues) for a full
 list of proposed features (and known issues).
