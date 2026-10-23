@@ -2,7 +2,7 @@
 ✨ sleek typing tui with visualized results and historical logging
 
 [![GitHub Build Workflow](https://github.com/jrnxf/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/build.yml)
-[![GitHub Deploy Workflow](https://github.com/jrnxf/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/deploy.yml)
+[![GitHub Release Workflow](https://github.com/jrnxf/thokr/actions/workflows/release.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](./LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
 [![Github Stars](https://img.shields.io/github/stars/jrnxf/thokr)](https://github.com/jrnxf/thokr/stargazers)
@@ -23,8 +23,15 @@ $ cargo install thokr
 $ brew install jrnxf/tap/thokr
 ```
 
-The formula builds thokr from source, so it needs a Rust toolchain (Homebrew
-installs one for you).
+From v0.6.1, the formula installs a prebuilt binary for macOS (Apple silicon
+and Intel) and Linux, with nothing to compile. `brew install --HEAD jrnxf/tap/thokr` builds the latest commit from source
+instead.
+
+### Prebuilt binaries
+
+Each [release](https://github.com/jrnxf/thokr/releases) has a `.tar.gz` archive
+with the `thokr` binary for macOS and Linux (static, so any distribution), each
+with a `.sha256` checksum.
 
 ### Arch Linux
 
