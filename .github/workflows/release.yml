@@ -222,14 +222,39 @@ jobs:
           repository: jrnxf/homebrew-tap
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
 
-      # The script only rewrites the url and sha256 lines, so a formula that still builds with cargo
-      # would come out broken: refuse it rather than push that to the tap brew installs from.
-      - name: Check the formula installs the binary
+      # The formula used to build from the source archive with cargo. The first release from this
+      # workflow rewrites it to install the binary, keeping cargo for `brew install --HEAD`; later
+      # releases leave its shape alone and only move its urls.
+      - name: Install the binary, not build it
         run: |
-          if ! grep -q 'bin.install "thokr"' Formula/thokr.rb; then
-            echo "::error::Formula/thokr.rb does not install a prebuilt binary, so it was not updated"
-            exit 1
+          if grep -q 'build.head?' Formula/thokr.rb; then
+            exit 0
           fi
+          cat > Formula/thokr.rb <<'EOF'
+          class Thokr < Formula
+            desc "sleek typing tui with visualized results and historical logging"
+            homepage "https://github.com/jrnxf/thokr"
+            license "MIT"
+
+            head do
+              url "https://github.com/jrnxf/thokr.git", branch: "main"
+              depends_on "rust" => :build
+            end
+
+            def install
+              if build.head?
+                system "cargo", "install", *std_cargo_args
+              else
+                # A release is one archive per system and architecture, holding a prebuilt binary.
+                bin.install "thokr"
+              end
+            end
+
+            test do
+              assert_match(/thokr \d+\.\d+\.\d+/, shell_output("#{bin}/thokr --version"))
+            end
+          end
+          EOF
 
       # The binary mode downloads each asset from the release and checks it against its .sha256.
       - run: |
