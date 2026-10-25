@@ -87,10 +87,7 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
     }
 
     let (line_no, col) = layout::char_cell(&lines, thok.input.len())?;
-    Some(Position::new(
-        x + col,
-        prompt_area.y + line_no as u16,
-    ))
+    Some(Position::new(x + col, prompt_area.y + line_no as u16))
 }
 
 /// One wrapped line of the prompt. Typed chars are green or red, the rest
