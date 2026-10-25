@@ -213,6 +213,7 @@ function moveOn(i) {
     $("install").scrollIntoView({ behavior, block: "end" });
     return null;
   }
+  auto.hold(next);
   next.el.scrollIntoView({ behavior, block: "center" });
   next.typer.focus();
   return next;
@@ -270,7 +271,7 @@ for (const sec of document.querySelectorAll(".line")) {
   const index = entries.length;
   entries.push({ typer, el: sec });
 }
-autoType(entries);
+const auto = autoType(entries);
 document.querySelectorAll("button[data-copy]").forEach((b) => b.addEventListener("click", async () => {
   if (await copy($(b.dataset.copy).textContent)) { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1400); }
 }));

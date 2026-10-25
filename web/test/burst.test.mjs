@@ -94,3 +94,26 @@ test("typing through every block with no clicks ends on the install footer", asy
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test("keys typed while the page scrolls to the next sentence stay with it", async () => {
+  const { page, errors } = await open();
+  await page.$$eval(SECTIONS, (els) => els[0].scrollIntoView({ block: "center" }));
+  await page.waitForFunction(() => document.querySelectorAll(".line")[0].classList.contains("tk-active"));
+  const next = await say(page, 1);
+  const wrong = next[0] === "x" ? "z" : "x";
+  await page.keyboard.type((await say(page, 0)) + wrong, { delay: 0 });
+  // mid-scroll, while the finished sentence is still nearest the middle
+  await page.waitForTimeout(120);
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(80);
+  await page.keyboard.type(next.slice(0, 3), { delay: 0 });
+  await page.waitForTimeout(800);
+
+  assert.match(await page.$$eval(SECTIONS, (els) => els[0].querySelector(".after").textContent), /wpm/, "the first sentence stays finished");
+  assert.deepEqual(await active(page), { block: 1, focused: true });
+  const marks = await page.$$eval(SECTIONS, (els) => [...els[1].querySelectorAll(".p .c, .p .x")].map((s) => s.className));
+  assert.deepEqual(marks, ["c", "c", "c"], "the Backspace undid the mistake in the sentence being typed");
+  assert.deepEqual(errors, []);
+  await page.close();
+});
