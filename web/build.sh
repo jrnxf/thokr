@@ -27,8 +27,10 @@ if ! command -v rustup >/dev/null; then
             Linux-x86_64) ;;
             *) echo "build.sh needs rustup; see https://rustup.rs" >&2; exit 1 ;;
         esac
-        init=$(mktemp)
-        trap 'rm -f "$init"' EXIT
+        # rustup-init reads its own file name, so it must keep it
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        init=$tmp/rustup-init
         echo "Installing rustup $RUSTUP_VERSION"
         curl -sSfL --retry 3 -o "$init" \
             "https://static.rust-lang.org/rustup/archive/$RUSTUP_VERSION/x86_64-unknown-linux-gnu/rustup-init"
