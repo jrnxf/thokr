@@ -70,9 +70,10 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
         [line] => (prompt_area.width / 2).saturating_sub(line.width() as u16 / 2),
         _ => 0,
     };
+    let x = prompt_area.x + x_offset;
     let text_area = Rect {
-        x: prompt_area.x + x_offset,
-        width: prompt_area.width - x_offset,
+        x,
+        width: (prompt_area.width - x_offset + 1).min(area.right().saturating_sub(x)),
         ..prompt_area
     };
     Paragraph::new(text).render(text_area, buf);
@@ -85,7 +86,7 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
 
     let (line_no, col) = layout::char_cell(&lines, thok.input.len())?;
     Some(Position::new(
-        prompt_area.x + x_offset + col,
+        x + col,
         prompt_area.y + line_no as u16,
     ))
 }
@@ -503,6 +504,12 @@ mod tests {
     fn running_keeps_words_aligned_when_a_line_is_exactly_full() {
         // 15 wide leaves 5 columns for the prompt, and "aaaaa" fills them
         let thok = Thok::typed("aaaaa bbb ccccc dd", "aaaaa", None, &[]);
+        insta::assert_snapshot!(draw(&thok, 15, 6));
+    }
+
+    #[test]
+    fn running_shows_a_mistyped_space_hanging_off_a_full_line() {
+        let thok = Thok::typed("aaaaa bbb ccccc dd", "aaaaax", None, &[]);
         insta::assert_snapshot!(draw(&thok, 15, 6));
     }
 
