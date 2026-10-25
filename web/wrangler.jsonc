@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thokr-web",
+  "compatibility_date": "2026-10-25",
+  // Static files only: build.sh writes the page and the engine to dist.
+  "assets": { "directory": "./dist" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "thokr.jrnxf.co", "custom_domain": true }],
+}
