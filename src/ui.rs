@@ -500,6 +500,13 @@ mod tests {
     }
 
     #[test]
+    fn running_keeps_words_aligned_when_a_line_is_exactly_full() {
+        // 15 wide leaves 5 columns for the prompt, and "aaaaa" fills them
+        let thok = Thok::typed("aaaaa bbb ccccc dd", "aaaaa", None, &[]);
+        insta::assert_snapshot!(draw(&thok, 15, 6));
+    }
+
+    #[test]
     fn running_in_a_terminal_too_small_for_the_prompt() {
         let thok = Thok::typed(LONG_PROMPT, "it was", None, &[]);
         insta::assert_snapshot!(draw(&thok, 20, 6));
