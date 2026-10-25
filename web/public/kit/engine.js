@@ -169,10 +169,11 @@ export function paintState(el, s) {
  * (after a link, a button or Esc) go to it too. `entries` is [{ typer, el }]
  * in page order. A phone still needs one tap: browsers open the keyboard only
  * for a touch. `hold(entry)` keeps the keyboard on `entry` while the page
- * scrolls to it, until it is the nearest or the scroll ends.
+ * scrolls to it: until it is the nearest, the scroll ends, the user scrolls,
+ * or a second has gone by.
  */
 export function autoType(entries) {
-  let active = null, held = null;
+  let active = null, held = null, holdTimer;
   const activate = (entry) => {
     if (entry === active) return;
     active?.el.classList.remove("tk-active");
@@ -193,11 +194,20 @@ export function autoType(entries) {
     if (held) {
       if (best !== held) return;
       held = null;
+      clearTimeout(holdTimer);
     }
     activate(best);
   };
   addEventListener("scroll", () => requestAnimationFrame(pick), { passive: true });
-  addEventListener("scrollend", () => { held = null; pick(); });
+  const release = () => {
+    if (!held) return;
+    held = null;
+    clearTimeout(holdTimer);
+    pick();
+  };
+  addEventListener("scrollend", release);
+  addEventListener("wheel", release, { passive: true });
+  addEventListener("touchstart", release, { passive: true });
   addEventListener("resize", pick);
   document.addEventListener("keydown", (ev) => {
     const fe = document.activeElement;
@@ -215,5 +225,11 @@ export function autoType(entries) {
   for (const e of entries) e.typer.ta.addEventListener("focus", () => activate(e));
   pick();
   entries[0].typer.focus();
-  return { hold: (entry) => { held = entry; } };
+  return {
+    hold(entry) {
+      held = entry;
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(release, 1000);
+    },
+  };
 }
