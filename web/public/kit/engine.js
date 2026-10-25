@@ -168,10 +168,11 @@ export function paintState(el, s) {
  * the keyboard, from page load on. Keys pressed while nothing has focus
  * (after a link, a button or Esc) go to it too. `entries` is [{ typer, el }]
  * in page order. A phone still needs one tap: browsers open the keyboard only
- * for a touch.
+ * for a touch. `hold(entry)` keeps the keyboard on `entry` while the page
+ * scrolls to it, until it is the nearest or the scroll ends.
  */
 export function autoType(entries) {
-  let active = null;
+  let active = null, held = null;
   const activate = (entry) => {
     if (entry === active) return;
     active?.el.classList.remove("tk-active");
@@ -189,9 +190,14 @@ export function autoType(entries) {
       const d = Math.abs((r.top + r.bottom) / 2 - mid);
       if (d < bestD) { bestD = d; best = e; }
     }
+    if (held) {
+      if (best !== held) return;
+      held = null;
+    }
     activate(best);
   };
   addEventListener("scroll", () => requestAnimationFrame(pick), { passive: true });
+  addEventListener("scrollend", () => { held = null; pick(); });
   addEventListener("resize", pick);
   document.addEventListener("keydown", (ev) => {
     const fe = document.activeElement;
@@ -209,5 +215,5 @@ export function autoType(entries) {
   for (const e of entries) e.typer.ta.addEventListener("focus", () => activate(e));
   pick();
   entries[0].typer.focus();
-  return { activate };
+  return { hold: (entry) => { held = entry; } };
 }
