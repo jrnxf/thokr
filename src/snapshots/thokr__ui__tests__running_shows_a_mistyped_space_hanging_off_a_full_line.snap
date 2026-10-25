@@ -1,0 +1,22 @@
+---
+source: src/ui.rs
+expression: "draw(&thok, 15, 6)"
+---
+               
+     aaaaa·    
+     bbb       
+     ccccc     
+     dd        
+               
+
+...............
+.....aaaaab....
+.....cccc......
+.....cccccc....
+.....cc........
+...............
+
+a = fg Green, BOLD
+b = fg Red, BOLD
+c = fg Reset, BOLD | DIM
+cursor = Some(Position { x: 5, y: 2 })
