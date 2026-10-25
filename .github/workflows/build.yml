@@ -48,3 +48,23 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # builds thokr's src/ to WebAssembly with the toolchain build.sh pins
+      - run: ./build.sh
+      - run: npx playwright install --with-deps chromium
+      # the engine and the chart against thokr's insta snapshots, then the page in Chromium
+      - run: npm test

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>thokr - a typing test for the terminal</title>
+<meta name="description" content="thokr is a typing test that runs in your terminal. Every line on this page is a thokr prompt you can type.">
+<meta name="color-scheme" content="light dark">
+<style>
+@font-face { font-family: "DM Mono"; src: url(fonts/dm-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(fonts/dm-mono-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
+:root {
+  --bg: #f6f5f1; --ink: #141414; --todo: #b9b6ad; --soft: #6c6a64; --rule: #dcd9d0; --red: #e0301e;
+  --font: "DM Mono"; --typed: 500; --untyped: 400;
+  color-scheme: light;
+}
+:root[data-theme="dark"] { --bg: #111111; --ink: #f1efe9; --todo: #4b4a47; --soft: #8f8c85; --rule: #262625; --red: #ff5a47; color-scheme: dark; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font), ui-monospace, monospace; font-size: 15px; line-height: 1.55; }
+a { color: inherit; text-underline-offset: 4px; }
+code { font-family: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
+header .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.mark { font-weight: 500; font-size: 20px; text-decoration: none; }
+header nav { margin-left: auto; display: flex; gap: 22px; font-size: 14px; align-items: baseline; }
+header nav a, header nav button { text-decoration: none; color: var(--soft); background: none; border: 0; font: inherit; cursor: pointer; padding: 0; }
+header nav a:hover, header nav button:hover { color: var(--ink); }
+
+/* a prompt: typed letters are darker and heavier than the rest */
+.p { margin: 0; font-weight: var(--untyped); overflow-wrap: anywhere; cursor: text; }
+.p span { position: relative; transition: color .12s; }
+.p .u { color: var(--todo); }
+.p .c { color: var(--ink); font-weight: var(--typed); }
+.p .x { color: var(--red); font-weight: var(--typed); }
+.p .cur::before { content: ""; position: absolute; left: -.04em; top: .12em; bottom: .08em; width: .08em; background: var(--ink); }
+.p.tk-end::after { content: ""; display: inline-block; width: .08em; height: .9em; background: var(--ink); vertical-align: -.1em; }
+.p .pace { background: var(--ink); color: var(--bg); }
+.line:not(.tk-active) .p .cur::before, .line:not(.tk-active) .p.tk-end::after { opacity: .3; }
+.tk-input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px; resize: none; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .p span { transition: none; } }
+
+/* hero */
+.hero { min-height: calc(100svh - 64px); display: flex; flex-direction: column; justify-content: center; padding: 24px 0 40px; }
+.hero .p { font-size: clamp(32px, 5.4vw, 92px); line-height: 1.22; max-width: none; }
+.hero .lead { font-size: 14px; color: var(--soft); margin: 0 0 28px; }
+.hero .lead b { color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: baseline; margin-top: 30px; font-size: 14px; color: var(--soft); }
+.meta .timer:empty { display: none; }
+.meta .timer { color: var(--ink); font-weight: 500; font-size: 18px; }
+.meta span { display: inline-flex; gap: 2px; align-items: baseline; }
+.meta button { font: inherit; background: none; border: 0; color: var(--soft); padding: 2px 5px; cursor: pointer; }
+.meta button[aria-pressed="true"] { color: var(--ink); font-weight: 500; text-decoration: underline; text-underline-offset: 5px; }
+.meta button:hover { color: var(--ink); }
+.meta .cmd { margin-left: auto; color: var(--ink); }
+.res[hidden], .run[hidden] { display: none; }
+.res .stats { font-size: clamp(30px, 4.6vw, 70px); line-height: 1.1; font-weight: var(--typed); margin: 0 0 18px; white-space: pre-wrap; }
+.res .stats i { font-style: normal; color: var(--soft); font-weight: 400; }
+.res .chart svg { width: 100%; max-width: 980px; height: auto; display: block; }
+.tk-dot { fill: var(--ink); }
+.tk-rule { stroke: var(--rule); }
+.tk-label { fill: var(--ink); font-family: var(--font), monospace; }
+.tk-sec { fill: var(--soft); font-family: var(--font), monospace; }
+.res .again { margin-top: 18px; font-size: 14px; color: var(--soft); }
+
+/* each typeable block is a screen of its own */
+.line { min-height: 100svh; display: flex; flex-direction: column; justify-content: center; border-top: 1px solid var(--rule); padding: 8vh 0; position: relative; }
+.line .p { font-size: clamp(38px, 7.2vw, 124px); line-height: 1.12; max-width: none; letter-spacing: -.01em; }
+.line .note { margin: 22px 0 0; font-size: 16px; color: var(--soft); max-width: 64ch; }
+.line .note code { color: var(--ink); }
+.line .after { margin-top: 8px; font-size: 13px; color: var(--soft); min-height: 20px; }
+.line .after b { color: var(--ink); }
+footer { border-top: 1px solid var(--rule); font-size: 13px; color: var(--soft); }
+footer .inst { padding: 56px 40px 40px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 40px; align-items: baseline; }
+footer h2 { margin: 0; font-size: 13px; font-weight: 400; color: var(--soft); }
+footer .cmds { display: flex; flex-direction: column; gap: 10px; }
+footer .cmds p { margin: 0; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+footer code { font-size: 17px; color: var(--ink); transition: font-size .6s cubic-bezier(.2, .8, .2, 1); }
+footer .inst { transition: padding .6s cubic-bezier(.2, .8, .2, 1); }
+footer h2 { transition: font-size .6s cubic-bezier(.2, .8, .2, 1), color .6s; }
+footer.done .inst { padding-top: 14vh; padding-bottom: 14vh; }
+footer.done h2 { font-size: 18px; color: var(--ink); }
+footer.done code { font-size: clamp(22px, 3vw, 40px); }
+footer.done .cmds { gap: 18px; }
+@media (prefers-reduced-motion: reduce) { footer code, footer .inst, footer h2 { transition: none; } }
+footer .cmds button { font: inherit; font-size: 12px; background: none; border: 1px solid var(--rule); color: var(--soft); padding: 1px 8px; cursor: pointer; }
+footer .cmds button:hover { color: var(--ink); border-color: var(--soft); }
+footer .base { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: space-between; background: linear-gradient(var(--rule), var(--rule)) no-repeat top / calc(100% - 80px) 1px; padding-top: 20px; padding-bottom: 40px; }
+@media (max-width: 760px) {
+  .meta .cmd { margin-left: 0; width: 100%; }
+  header nav .hide { display: none; }
+}
+@media (max-width: 600px) {
+  header nav { gap: 14px; }
+  .res .stats { font-size: 22px; }
+  .wrap { padding: 0 16px; }
+  .hero { padding: 20px 0 40px; }
+  footer .inst { padding: 40px 16px 32px; grid-template-columns: minmax(0, 1fr); }
+  footer code { font-size: 15px; }
+  footer.done code { font-size: 17px; }
+  footer .cmds p { flex-wrap: nowrap; }
+  footer .base { background-size: calc(100% - 32px) 1px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="mark" href="#top">thokr</a>
+    <nav aria-label="Sections">
+      <a class="hide" href="#install">install</a>
+      <a href="https://github.com/jrnxf/thokr">source</a>
+      <button id="tog" type="button">theme</button>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap">
+    <div class="hero" id="hero">
+      <p class="lead"><b>Start typing.</b> This is thokr, a typing test for the terminal, running in the page.</p>
+      <div class="run" id="run"><p class="p" id="prompt"></p></div>
+      <div class="res" id="res" hidden>
+        <p class="stats" id="stats"></p>
+        <div class="chart" id="chart"></div>
+        <p class="again">left arrow: the same words · right arrow: new words</p>
+      </div>
+      <div class="meta" id="opts">
+        <span class="timer" id="timer"></span>
+        <span>words <button data-words="15" aria-pressed="true">15</button><button data-words="30">30</button><button data-words="50">50</button></span>
+        <span>limit <button data-secs="0" aria-pressed="true">none</button><button data-secs="30">30s</button></span>
+        <span>pace <button data-pace="0" aria-pressed="true">off</button><button data-pace="60">60</button></span>
+        <span class="cmd" id="cmd">thokr</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="line" id="what">
+      <p class="p" data-say="thokr is a typing test that runs in your terminal"></p>
+      <div class="after"></div>
+      <p class="note">15 of the 200 most common English words. Mistakes show in red; backspace fixes them.</p>
+    </section>
+    <section class="line">
+      <p class="p" data-say="when you finish, it plots your speed for each second"></p>
+      <div class="after"></div>
+      <p class="note">Words per minute against seconds, then accuracy and how steady you were.</p>
+    </section>
+    <section class="line">
+      <p class="p" data-say="each test adds a row to a log file"></p>
+      <div class="after"></div>
+      <p class="note"><code>log.csv</code> in thokr's config folder, one row per test.</p>
+    </section>
+    <section class="line">
+      <p class="p" data-say="one flag changes the test"></p>
+      <div class="after"></div>
+      <p class="note"><code>-w 50</code> · <code>-s 30</code> · <code>--pace 60</code> · <code>-p "text"</code> · <code>-f 2</code> · <code>-l english1k</code></p>
+    </section>
+  </div>
+</main>
+
+<footer id="install">
+  <div class="wrap inst">
+    <h2>install</h2>
+    <div class="cmds">
+      <p><code id="i1">brew install jrnxf/tap/thokr</code><button type="button" data-copy="i1">copy</button></p>
+      <p><code id="i2">cargo install thokr</code><button type="button" data-copy="i2">copy</button></p>
+      <p><a href="https://github.com/jrnxf/thokr">source on GitHub</a></p>
+    </div>
+  </div>
+  <div class="wrap base">
+    <span>thokr __THOKR_VERSION__ · MIT · <a href="https://github.com/jrnxf/thokr">github.com/jrnxf/thokr</a></span>
+    <span>DM Mono by Colophon, <a href="https://github.com/jrnxf/thokr/blob/main/web/THIRD_PARTY.md">SIL OFL</a></span>
+    <span>also: <a href="https://okfs.jrnxf.co">okfs</a> · <a href="https://drip.jrnxf.co">drip</a></span>
+  </div>
+</footer>
+
+<script type="module">
+import { chartGrid, gridSVG } from "./kit/chart.js";
+import { loadEngine, WasmTyper, paintState, autoType } from "./kit/engine.js";
+import { cmdFor, copy, theme } from "./kit/page.js";
+theme(document.getElementById("tog"));
+const $ = (id) => document.getElementById(id);
+const stats = (s) => `${s.wpm} wpm   ${s.accuracy}% acc   ${s.sd.toFixed(2)} sd`;
+const reduceMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---- the hero test: thokr's own Rust, compiled to WebAssembly
+const opts = { words: 15, secs: 0, pace: 0 };
+function render(_e, s) {
+  $("run").hidden = s.finished;
+  $("res").hidden = !s.finished;
+  paintState($("prompt"), s);
+  $("timer").textContent = s.remaining != null && !s.finished ? s.remaining.toFixed(1) : "";
+}
+function results(s) {
+  const narrow = $("hero").clientWidth < 600;
+  $("stats").innerHTML = stats(s).replace(/(wpm|% acc|sd)/g, "<i>$1</i>");
+  $("chart").innerHTML = gridSVG(chartGrid(s.coords, narrow ? 34 : 70, narrow ? 10 : 12), { cw: 10, ch: 20 });
+}
+// When a block is finished, the next one comes to the middle of the window
+// and takes the keyboard, so typing just continues: after a moment, or at
+// once when the next key comes first. After the last block, install takes
+// the stage. An arrow key in the meantime keeps you where you are.
+const pending = new Map();
+function moveOn(i) {
+  clearTimeout(pending.get(i));
+  pending.delete(i);
+  const from = entries[i], next = entries[i + 1];
+  if (!from.typer.e.state().finished) return null;
+  const behavior = reduceMotion() ? "auto" : "smooth";
+  if (!next) {
+    $("install").scrollIntoView({ behavior, block: "end" });
+    return null;
+  }
+  next.el.scrollIntoView({ behavior, block: "center" });
+  next.typer.focus();
+  return next;
+}
+function advance(i, wait) {
+  clearTimeout(pending.get(i));
+  pending.set(i, setTimeout(() => moveOn(i), wait));
+}
+// a key typed after a block is finished goes on into the next block
+const carryOn = (i) => (key) => moveOn(i)?.typer.press(key);
+const hero = new WasmTyper($("hero"), await loadEngine(), {
+  config: opts,
+  render,
+  onFinish: (s) => { results(s); advance(0, 1400); },
+  afterFinish: carryOn(0),
+});
+function sync() {
+  $("cmd").textContent = cmdFor(opts);
+  for (const b of $("opts").querySelectorAll("button")) {
+    const d = b.dataset;
+    const on = d.words ? +d.words === opts.words : d.secs ? +d.secs === opts.secs : +d.pace === opts.pace;
+    b.setAttribute("aria-pressed", String(on));
+  }
+}
+$("opts").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const d = b.dataset;
+  if (d.words) opts.words = +d.words;
+  if (d.secs) { opts.secs = +d.secs; opts.words = opts.secs ? 100 : 15; }
+  if (d.pace) opts.pace = +d.pace;
+  sync(); hero.set({ ...opts }); hero.focus();
+});
+sync();
+
+// ---- every sentence is a prompt, each with its own copy of thokr; the one
+// nearest the middle of the window takes the keys, no click needed
+const entries = [{ typer: hero, el: $("hero") }];
+for (const sec of document.querySelectorAll(".line")) {
+  const p = sec.querySelector(".p[data-say]");
+  const after = sec.querySelector(".after");
+  const say = p.dataset.say;
+  const idle = () => { after.innerHTML = `thokr -p "${say}"`; };
+  idle();
+  const typer = new WasmTyper(sec, await loadEngine(), {
+    config: { prompt: say },
+    focusEl: p,
+    render: (_e, s) => { paintState(p, s); if (!s.started) idle(); },
+    onFinish(s) {
+      after.innerHTML = `<b>${s.wpm} wpm</b> · ${s.accuracy}% acc · ${s.sd.toFixed(2)} sd · left arrow: again`;
+      if (index === entries.length - 1) $("install").classList.add("done");
+      advance(index, 700);
+    },
+    afterFinish: (key) => carryOn(index)(key),
+  });
+  const index = entries.length;
+  entries.push({ typer, el: sec });
+}
+autoType(entries);
+document.querySelectorAll("button[data-copy]").forEach((b) => b.addEventListener("click", async () => {
+  if (await copy($(b.dataset.copy).textContent)) { b.textContent = "copied"; setTimeout(() => (b.textContent = "copy"), 1400); }
+}));
+addEventListener("resize", () => hero.after());
+</script>
+</body>
+</html>
