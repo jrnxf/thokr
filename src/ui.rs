@@ -71,6 +71,8 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
         _ => 0,
     };
     let x = prompt_area.x + x_offset;
+    // one extra column into the right margin so a space hanging off a full
+    // line (see layout::wrap_chars) is drawn, not clipped
     let text_area = Rect {
         x,
         width: (prompt_area.width - x_offset + 1).min(area.right().saturating_sub(x)),

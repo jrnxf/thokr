@@ -1,10 +1,12 @@
 use std::ops::Range;
 
-/// Greedy word-wrap over `chars` into lines of at most `width` cells.
+/// Greedy word-wrap over `chars` into lines of at most `width` cells (plus
+/// one hanging space, see below).
 /// Invariants: every char occupies exactly one cell on exactly one line
 /// (1:1 index↔cell mapping — nothing dropped, nothing inserted); no line
 /// exceeds `width`, except that one space may hang just past the edge of a
-/// line that is already full, so the next word starts at column 0. A break is inserted before a maximal non-space run
+/// line that is already full, so the next word starts at column 0. A break
+/// is inserted before a maximal non-space run
 /// ("word") that doesn't fit on the remainder of the current line but does
 /// fit on an empty line; words longer than `width` hard-break at the width
 /// boundary. Spaces are placed like any char (a line may end with spaces;
