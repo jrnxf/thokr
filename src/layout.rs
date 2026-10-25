@@ -3,7 +3,8 @@ use std::ops::Range;
 /// Greedy word-wrap over `chars` into lines of at most `width` cells.
 /// Invariants: every char occupies exactly one cell on exactly one line
 /// (1:1 index↔cell mapping — nothing dropped, nothing inserted); no line
-/// exceeds `width`. A break is inserted before a maximal non-space run
+/// exceeds `width`, except that one space may hang just past the edge of a
+/// line that is already full, so the next word starts at column 0. A break is inserted before a maximal non-space run
 /// ("word") that doesn't fit on the remainder of the current line but does
 /// fit on an empty line; words longer than `width` hard-break at the width
 /// boundary. Spaces are placed like any char (a line may end with spaces;
@@ -28,9 +29,10 @@ pub fn wrap_chars(chars: &[char], width: u16) -> Vec<Range<usize>> {
         let col = i - line_start; // current column on the line (0-based)
 
         if chars[i] == ' ' {
-            // spaces are placed like any char; if the line is already full,
-            // wrap before placing this space.
-            if col >= width {
+            // spaces are placed like any char; the first space after a full
+            // line hangs past the edge (so it doesn't push the next word
+            // right), any further one wraps before being placed.
+            if col > width {
                 lines.push(line_start..i);
                 line_start = i;
             }
@@ -126,6 +128,23 @@ mod tests {
     }
 
     #[test]
+    fn space_after_a_full_line_hangs_instead_of_indenting_the_next() {
+        let c = chars("aaaaa bbb");
+        let lines = wrap_chars(&c, 5);
+        assert_eq!(lines, vec![0..6, 6..9]);
+        assert_eq!(char_cell(&lines, 5), Some((0, 5)));
+        assert_eq!(char_cell(&lines, 6), Some((1, 0)));
+    }
+
+    #[test]
+    fn a_second_space_after_a_full_line_wraps() {
+        let c = chars("aaaaa  bbb");
+        let lines = wrap_chars(&c, 5);
+        assert_eq!(lines, vec![0..6, 6..10]);
+        assert_eq!(char_cell(&lines, 6), Some((1, 0)));
+    }
+
+    #[test]
     fn every_index_has_exactly_one_cell() {
         let cases = [
             ("ab cd", 10u16),
@@ -134,6 +153,7 @@ mod tests {
             ("a  b", 10),
             ("the quick brown fox jumps", 7),
             ("supercalifragilistic word", 5),
+            ("aaaaa bbb ccccc dd", 5),
         ];
         for (s, width) in cases {
             let c = chars(s);
@@ -149,15 +169,16 @@ mod tests {
                 assert_eq!(w[0].end, w[1].start, "{s:?}@{width} contiguous/disjoint");
             }
             for r in &lines {
+                // a full line may carry one hanging space past the edge
                 assert!(
-                    r.end - r.start <= width as usize,
+                    r.end - r.start <= width as usize + 1,
                     "{s:?}@{width} line {r:?} exceeds width"
                 );
             }
             // each in-range index maps to a cell within its line
             for idx in 0..c.len() {
                 let (line, col) = char_cell(&lines, idx).expect("in-range idx has a cell");
-                assert!(col < width, "{s:?}@{width} col in bounds");
+                assert!(col <= width, "{s:?}@{width} col in bounds");
                 assert!(line < lines.len(), "{s:?}@{width} line in bounds");
             }
             assert_eq!(char_cell(&lines, c.len()), None, "{s:?}@{width} len = None");
