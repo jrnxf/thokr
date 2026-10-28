@@ -70,6 +70,7 @@ export function autoType(entries: Entry[]) {
   pick();
   entries[0]!.typer.focus();
   return {
+    focus() { active?.typer.focus(); },
     hold(entry: Entry) {
       held = entry;
       clearTimeout(holdTimer);

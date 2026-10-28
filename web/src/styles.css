@@ -97,4 +97,4 @@ footer .base { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
    nothing shifts when the real one arrives; the hero stays hidden while its
    words load, for the same reason. */
 #root:not(.ready) { visibility: hidden; }
-.hero.booting > * { visibility: hidden; }
+.hero[data-booting] > * { visibility: hidden; }

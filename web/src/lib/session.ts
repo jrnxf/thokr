@@ -68,6 +68,7 @@ export async function startSession(
   auto = autoType(entries);
   return {
     hero: entries[0]!.typer,
+    focus: () => auto.focus(),
     destroy() {
       for (const t of pending.values()) clearTimeout(t);
       auto.destroy();

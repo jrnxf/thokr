@@ -59,7 +59,10 @@ export function App() {
 
   useEffect(() => {
     // DM Mono is preloaded from the head; show the page once both weights are in
-    const show = () => document.getElementById("root")?.classList.add("ready");
+    const show = () => {
+      document.getElementById("root")?.classList.add("ready");
+      setReady(true);
+    };
     const timeout = setTimeout(show, 3000);
     Promise.all([document.fonts.load('400 1em "DM Mono"'), document.fonts.load('500 1em "DM Mono"')])
       .catch(() => {})
@@ -67,6 +70,8 @@ export function App() {
     return () => clearTimeout(timeout);
   }, []);
 
+  const [ready, setReady] = useState(false);
+  const [live, setLive] = useState(false);
   const [opts, setOpts] = useState<Opts>({ words: 15, secs: 0, pace: 0 });
   const [hero, setHero] = useState<EngineState | null>(null);
   const [results, setResults] = useState<{ stats: string; chart: string } | null>(null);
@@ -109,6 +114,7 @@ export function App() {
     ).then((s) => {
       if (gone) return s.destroy();
       started = session.current = s;
+      setLive(true);
     });
     addEventListener("resize", onResize);
     return () => {
@@ -118,6 +124,12 @@ export function App() {
       session.current = null;
     };
   }, []);
+
+  // a hidden textarea cannot take the keyboard, so hand it over once everything shows
+  const heroShown = hero !== null;
+  useEffect(() => {
+    if (ready && heroShown && live) session.current?.focus();
+  }, [ready, heroShown, live]);
 
   function pick(change: Partial<Opts>) {
     const next = { ...opts, ...change };
@@ -145,7 +157,8 @@ export function App() {
 
       <main id="top">
         <div className="wrap">
-          <div className={hero ? "hero" : "hero booting"} id="hero" ref={heroEl}>
+          {/* a data attribute, not a class: the typer puts classes of its own on this element */}
+          <div className="hero" id="hero" ref={heroEl} data-booting={hero ? undefined : ""}>
             <p className="lead"><b>Start typing.</b> This is thokr, a typing test for the terminal, running in the page.</p>
             <div className="run" id="run" hidden={finished}><Prompt id="prompt" state={hero} /></div>
             <div className="res" id="res" hidden={!finished}>
