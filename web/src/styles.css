@@ -1,5 +1,5 @@
-@font-face { font-family: "DM Mono"; src: url(/fonts/dm-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "DM Mono"; src: url(/fonts/dm-mono-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(./fonts/dm-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(./fonts/dm-mono-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
 :root {
   --bg: #f6f5f1; --ink: #141414; --todo: #b9b6ad; --soft: #6c6a64; --rule: #dcd9d0; --red: #e0301e;
   --font: "DM Mono"; --typed: 500; --untyped: 400;
@@ -92,3 +92,9 @@ footer .base { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: s
   footer .cmds p { flex-wrap: nowrap; }
   footer .base { background-size: calc(100% - 32px) 1px; }
 }
+
+/* Nothing is painted before DM Mono is in, so the fallback font never shows and
+   nothing shifts when the real one arrives; the hero stays hidden while its
+   words load, for the same reason. */
+#root:not(.ready) { visibility: hidden; }
+.hero.booting > * { visibility: hidden; }

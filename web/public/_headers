@@ -1,3 +1,0 @@
-# Vite names everything under assets/ by its content, so it never changes under its name.
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable

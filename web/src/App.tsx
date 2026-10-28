@@ -57,6 +57,16 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   useLayoutEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
 
+  useEffect(() => {
+    // DM Mono is preloaded from the head; show the page once both weights are in
+    const show = () => document.getElementById("root")?.classList.add("ready");
+    const timeout = setTimeout(show, 3000);
+    Promise.all([document.fonts.load('400 1em "DM Mono"'), document.fonts.load('500 1em "DM Mono"')])
+      .catch(() => {})
+      .then(() => { clearTimeout(timeout); show(); });
+    return () => clearTimeout(timeout);
+  }, []);
+
   const [opts, setOpts] = useState<Opts>({ words: 15, secs: 0, pace: 0 });
   const [hero, setHero] = useState<EngineState | null>(null);
   const [results, setResults] = useState<{ stats: string; chart: string } | null>(null);
@@ -135,7 +145,7 @@ export function App() {
 
       <main id="top">
         <div className="wrap">
-          <div className="hero" id="hero" ref={heroEl}>
+          <div className={hero ? "hero" : "hero booting"} id="hero" ref={heroEl}>
             <p className="lead"><b>Start typing.</b> This is thokr, a typing test for the terminal, running in the page.</p>
             <div className="run" id="run" hidden={finished}><Prompt id="prompt" state={hero} /></div>
             <div className="res" id="res" hidden={!finished}>
