@@ -11,7 +11,7 @@ import { extname } from "node:path";
 import { chromium } from "playwright";
 
 const dist = new URL("../dist/", import.meta.url);
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".wasm": "application/wasm", ".woff2": "font/woff2" };
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".wasm": "application/wasm", ".woff2": "font/woff2" };
 let server, browser, url;
 
 before(async () => {

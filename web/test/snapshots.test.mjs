@@ -2,15 +2,18 @@
 // a change to ui.rs that the page does not follow fails here:
 // - every running-screen snapshot is drawn again by the WebAssembly engine
 //   that build.sh compiles from src/, typed key by key;
-// - every results-screen snapshot is drawn again by kit/chart.js, the page's
+// - every results-screen snapshot is drawn again by src/lib/chart.ts, the page's
 //   JavaScript port of the chart.
 // The fixtures are read from the tests in src/ui.rs. Run after build.sh.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { calcResults, resultsGrid } from "../public/kit/chart.js";
-import { loadEngine } from "../dist/kit/engine.js";
+import { calcResults, resultsGrid } from "../src/lib/chart.ts";
+import { loadEngine } from "../src/lib/engine.ts";
+
+// build.sh drops the engine it compiles in wasm/
+const wasm = new URL("../wasm/thokr.wasm", import.meta.url);
 
 const root = new URL("../../", import.meta.url);
 const ui = await readFile(new URL("src/ui.rs", root), "utf8");
@@ -43,7 +46,7 @@ for (const name of names.filter((n) => n.startsWith("running_"))) {
     const size = fn.match(/draw\(&thok, (\d+), (\d+)\)/);
     assert.ok(typed && size, `${name}: no Thok::typed(prompt, typed, None, &[]) and draw(&thok, w, h) to replay`);
     const [w, h] = [+size[1], +size[2]];
-    const engine = await loadEngine();
+    const engine = await loadEngine(wasm);
     engine.config({ prompt: str(typed[1]) });
     for (const c of str(typed[2])) engine.key(c);
     const frame = engine.frame(w, h);
@@ -63,7 +66,7 @@ const fixture = {
 };
 
 for (const name of names.filter((n) => n.startsWith("results_"))) {
-  test(`${name}, drawn by kit/chart.js`, async () => {
+  test(`${name}, drawn by src/lib/chart.ts`, async () => {
     const fn = body(name);
     const size = fn.match(/draw\(&(\w+(?:\(\))?), (\d+), (\d+)\)/);
     assert.ok(size, `${name}: no draw(&thok, w, h)`);
