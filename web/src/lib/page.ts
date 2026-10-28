@@ -1,15 +1,11 @@
 // Small helpers for the page.
 
-/** Light or dark: ?theme=dark|light, then the system setting; the button flips it. */
-export function theme(button) {
+export type Theme = "light" | "dark";
+
+/** Light or dark: ?theme=dark|light, then the system setting. */
+export function initialTheme(): Theme {
   const q = new URLSearchParams(location.search).get("theme");
-  const root = document.documentElement;
-  const set = (t) => {
-    root.dataset.theme = t;
-    button?.setAttribute("aria-pressed", String(t === "dark"));
-  };
-  set(q === "dark" || q === "light" ? q : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  button?.addEventListener("click", () => set(root.dataset.theme === "dark" ? "light" : "dark"));
+  return q === "dark" || q === "light" ? q : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 /** The thokr command that runs the same test in a terminal. */
@@ -22,7 +18,7 @@ export function cmdFor({ words = 15, secs = 0, pace = 0 } = {}) {
 }
 
 /** Copies text; resolves true when the clipboard took it. */
-export async function copy(text) {
+export async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text);
     return true;

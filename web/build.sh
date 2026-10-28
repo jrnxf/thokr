@@ -1,8 +1,8 @@
 #!/bin/sh
-# Builds the website into web/dist: the page from web/public, and its engine,
-# thokr's own Rust (src/) compiled to WebAssembly from this checkout, named by
-# its content so browsers can keep it for good. The word lists come with it:
-# lang.rs includes src/lang/*.txt.
+# Builds the website into web/dist: the page (TypeScript and React, built by
+# Vite), and its engine, thokr's own Rust (src/) compiled to WebAssembly from
+# this checkout, which Vite names by its content so browsers can keep it for
+# good. The word lists come with it: lang.rs includes src/lang/*.txt.
 #
 # It runs as is in Cloudflare's Workers Builds, whose image has no Rust: it then
 # installs rustup, at the version and checksum below, and the toolchain.
@@ -49,18 +49,8 @@ target=$root/target/web
 rustup run "$RUST_VERSION" cargo build --release --locked --target wasm32-wasip1 \
     --manifest-path "$web/engine/Cargo.toml" --target-dir "$target"
 
-dist=$web/dist
-rm -rf "$dist"
-mkdir -p "$dist"
-cp -R "$web/public/." "$dist/"
-engine=$target/wasm32-wasip1/release/thokr_web_engine.wasm
-wasm=thokr.$(sha256 "$engine" | cut -c 1-16).wasm
-cp "$engine" "$dist/kit/$wasm"
-version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$root/Cargo.toml" | head -n 1)
-sed "s/__THOKR_WASM__/$wasm/" "$web/public/kit/engine.js" > "$dist/kit/engine.js"
-sed "s/__THOKR_VERSION__/$version/" "$web/public/index.html" > "$dist/index.html"
-if grep -rq "__THOKR_" "$dist"; then
-    echo "a placeholder was left in dist" >&2
-    exit 1
-fi
-ls -lR "$dist"
+# the page imports the engine from wasm/; Vite names it by its content
+mkdir -p "$web/wasm"
+cp "$target/wasm32-wasip1/release/thokr_web_engine.wasm" "$web/wasm/thokr.wasm"
+npm --prefix "$web" run build:app
+ls -lR "$web/dist"
