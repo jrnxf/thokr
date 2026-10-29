@@ -1,0 +1,27 @@
+{
+  "name": "thokr-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "build:app": "tsc && vite build",
+    "dev": "vite",
+    "typecheck": "tsc",
+    "test": "node --test test/*.test.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "playwright": "1.64.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wrangler": "4.152.0"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

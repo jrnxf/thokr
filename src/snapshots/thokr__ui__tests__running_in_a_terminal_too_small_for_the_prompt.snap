@@ -1,0 +1,21 @@
+---
+source: src/ui.rs
+expression: "draw(&thok, 20, 6)"
+---
+     it was the     
+     best of        
+     times it       
+     was the        
+     worst of       
+     times it       
+
+.....aaaaaabbbbb....
+.....bbbbbbbb.......
+.....bbbbbbbbb......
+.....bbbbbbbb.......
+.....bbbbbbbbb......
+.....bbbbbbbbb......
+
+a = fg Green, BOLD
+b = fg Reset, BOLD | DIM
+cursor = Some(Position { x: 11, y: 0 })

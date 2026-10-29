@@ -1,0 +1,29 @@
+[package]
+name = "thokr-web-engine"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "thokr's own test loop and screen, compiled to WebAssembly for the website"
+
+# The modules are thokr's source files in ../../src, included by path, so the
+# page runs the same code as the release built from this checkout. main.rs's
+# terminal loop is replaced by the C ABI in src/lib.rs.
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+cgisf_lib = "0.1.3"
+clap = { version = "4.6", features = ["derive"] }
+rand = "0.8.5"
+ratatui = { version = "0.30.2", default-features = false, features = ["std", "layout-cache"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+panic = "abort"
+
+# Not part of thokr's package or workspace.
+[workspace]

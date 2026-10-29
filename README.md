@@ -1,13 +1,13 @@
 # thokr
 ✨ sleek typing tui with visualized results and historical logging
 
-[![GitHub Build Workflow](https://github.com/thatvegandev/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/build.yml)
-[![GitHub Deploy Workflow](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml/badge.svg)](https://github.com/thatvegandev/thokr/actions/workflows/deploy.yml)
+[![GitHub Build Workflow](https://github.com/jrnxf/thokr/actions/workflows/build.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/build.yml)
+[![GitHub Release Workflow](https://github.com/jrnxf/thokr/actions/workflows/release.yml/badge.svg)](https://github.com/jrnxf/thokr/actions/workflows/release.yml)
 [![License](https://img.shields.io/badge/License-MIT-default.svg)](./LICENSE.md)
 [![Crate Version](https://img.shields.io/crates/v/thokr)](https://crates.io/crates/thokr)
-[![Github Stars](https://img.shields.io/github/stars/thatvegandev/thokr)](https://github.com/thatvegandev/thokr/stargazers)
+[![Github Stars](https://img.shields.io/github/stars/jrnxf/thokr)](https://github.com/jrnxf/thokr/stargazers)
 
-![demo](https://github.com/thatvegandev/assets/raw/main/thokr/demo.gif)
+![demo](./assets/demo.gif)
 
 ## Installation
 
@@ -17,11 +17,21 @@
 $ cargo install thokr
 ```
 
-### Docker
+### Homebrew
 
 ```sh
-$ docker run -it thatvegandev/thokr
+$ brew install jrnxf/tap/thokr
 ```
+
+From v0.6.1, the formula installs a prebuilt binary for macOS (Apple silicon
+and Intel) and Linux, with nothing to compile. `brew install --HEAD jrnxf/tap/thokr` builds the latest commit from source
+instead.
+
+### Prebuilt binaries
+
+Each [release](https://github.com/jrnxf/thokr/releases) has a `.tar.gz` archive
+with the `thokr` binary for macOS and Linux (static, so any distribution), each
+with a `.sha256` checksum.
 
 ### Arch Linux
 
@@ -98,13 +108,6 @@ can easily track your progress over time.
 
 ## Roadmap
 
-- [ ] ⚡️ Performance
-  - Right now there are known performance issues surrounding the rendering of
-    the tui at each tick interval and/or key press. Ideally each render uses the
-    prior render as a base and only makes the necessary adjustments (possibly
-    using
-    [StatefulWidget](https://docs.rs/tui/0.10.0/tui/widgets/trait.StatefulWidget.html)),
-    but I haven't been able to figure that out yet.
 - [ ] 🔠 Multi-language support
   - I decided not to launch thokr with languages besides english because of some
     odd rendering issues I was experiencing when trying to input characters with
@@ -113,18 +116,13 @@ can easily track your progress over time.
     have that figure out before shipping other languages because I personally
     felt the experience was a bit jarring. I'll open an bug report for it with
     more details and replication steps -- would love more eyes on that problem!
-- [ ] 🧪 Tests
-  - I've only written a small amount of tests at this point. I haven't sat down
-    to really think through what tests look like when the output is dependent on
-    the users terminal size, font size, etc. If you have any ideas for this please
-    open up an issue and start the discussion!
 
 ## Contributing
 
 All contributions are **greatly appreciated**.
 
 If you have a suggestion that would make thokr better, please fork the repo and
-create a [pull request](https://github.com/thatvegandev/thokr/pulls). You can
+create a [pull request](https://github.com/jrnxf/thokr/pulls). You can
 also simply open an issue and select `Feature Request`
 
 1. Fork the repo
@@ -134,7 +132,11 @@ also simply open an issue and select `Feature Request`
 5. Push to your branch (`git push origin [your_username]/xyz`)
 6. Fill out pull request template
 
-See the [open issues](https://github.com/thatvegandev/thokr/issues) for a full
+Maintainers: publishing a release publishes the crate and then updates the
+formula in [jrnxf/homebrew-tap](https://github.com/jrnxf/homebrew-tap)
+automatically.
+
+See the [open issues](https://github.com/jrnxf/thokr/issues) for a full
 list of proposed features (and known issues).
 
 ## License
@@ -152,6 +154,4 @@ Check out these amazing projects that inspired thokr!
 
 ## Follow
 
-[![github](https://img.shields.io/github/followers/thatvegandev?style=social)](https://github.com/thatvegandev)
-[![twitter](https://img.shields.io/twitter/follow/thatvegandev?color=white&style=social)](https://twitter.com/thatvegandev)
-[![youtube](https://img.shields.io/youtube/channel/subscribers/UCEDfokz6igeN4bX7Whq49-g?style=social)](https://youtube.com/user/thatvegandev)
+[![github](https://img.shields.io/github/followers/jrnxf?style=social)](https://github.com/jrnxf)
