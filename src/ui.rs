@@ -3,7 +3,7 @@ use crate::thok::{Outcome, Thok};
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Flex, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
@@ -456,19 +456,13 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
         .iter()
         .filter(|&&c| c == ' ')
         .count();
-    let [
-        _,
-        title_area,
-        _,
-        what_area,
-        _,
-        prompt_area,
-        _,
-        stats_area,
-        _,
-        legend_area,
-    ] = Layout::vertical([
-        Constraint::Min(0),
+    // the block is centred on the screen, the key hints sit bottom left as
+    // on the results screen
+    let [content_area, legend_area] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
+        .horizontal_margin(HORIZONTAL_MARGIN)
+        .vertical_margin(VERTICAL_MARGIN)
+        .areas(area);
+    let [title_area, _, what_area, _, prompt_area, _, stats_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -476,15 +470,12 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
         Constraint::Length(text.len() as u16),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
     ])
-    .horizontal_margin(HORIZONTAL_MARGIN)
-    .vertical_margin(VERTICAL_MARGIN)
-    .areas(area);
+    .flex(Flex::Center)
+    .areas(content_area);
 
     let centered = Alignment::Center;
-    Paragraph::new(Span::styled("YOU DIED", INCORRECT))
+    Paragraph::new(Span::styled("\u{1F480} YOU DIED", INCORRECT))
         .alignment(centered)
         .render(title_area, buf);
     Paragraph::new(Span::styled(
@@ -497,7 +488,9 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     ))
     .alignment(centered)
     .render(what_area, buf);
-    Paragraph::new(text).render(prompt_area, buf);
+    Paragraph::new(text)
+        .alignment(centered)
+        .render(prompt_area, buf);
     let word_count = if words == 1 { "word" } else { "words" };
     Paragraph::new(Span::styled(
         format!(
