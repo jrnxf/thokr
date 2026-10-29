@@ -147,7 +147,7 @@ pub extern "C" fn tk_key(key: u32) {
             _ => {
                 let Some(c) = char::from_u32(key) else { return };
                 if !finished {
-                    if app.thok.write(c) {
+                    if app.thok.write(c, Instant::now()) {
                         app.thok.calc_results();
                     }
                 } else if c == 'r' {

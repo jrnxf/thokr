@@ -1251,7 +1251,7 @@ mod tests {
             );
             for _ in 0..200 {
                 let expected = thok.get_expected_char(thok.input.len());
-                thok.write(expected);
+                thok.write(expected, Instant::now());
                 assert_eq!(prompt_rows(&thok), at_the_start, "{width} wide");
             }
         }

@@ -39,7 +39,7 @@ fn bench_key_and_frame() {
             terminal.draw(|frame| app.draw(frame)).unwrap();
             let start = Instant::now();
             for c in PROMPT.chars().take(keys) {
-                app.thok.write(c);
+                app.thok.write(c, Instant::now());
                 terminal.draw(|frame| app.draw(frame)).unwrap();
             }
             samples.push(start.elapsed().as_nanos() as f64 / keys as f64);
@@ -50,7 +50,7 @@ fn bench_key_and_frame() {
         );
 
         // finish the test, then redraw the results screen
-        app.thok.write('e');
+        app.thok.write('e', Instant::now());
         app.thok.calc_results();
         let mut samples = Vec::new();
         for _ in 0..RUNS {

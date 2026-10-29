@@ -143,7 +143,7 @@ impl App {
             KeyCode::Right => self.new_test(),
             KeyCode::Backspace if !finished => self.thok.backspace(),
             KeyCode::Char(c) if !finished => {
-                if self.thok.write(c) {
+                if self.thok.write(c, Instant::now()) {
                     self.save_results();
                 }
             }
