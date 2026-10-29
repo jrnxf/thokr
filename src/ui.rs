@@ -1083,11 +1083,7 @@ mod tests {
 
     #[test]
     fn death_screen_names_a_mistyped_space() {
-        let screen = screen_text(&buffer(
-            &died_in_death_mode("the quick brown foxx"),
-            80,
-            24,
-        ));
+        let screen = screen_text(&buffer(&died_in_death_mode("the quick brown foxx"), 80, 24));
         assert!(screen.contains("YOU DIED"));
         assert!(screen.contains("expected space, pressed 'x'"));
     }
