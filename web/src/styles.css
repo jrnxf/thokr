@@ -1,0 +1,100 @@
+@font-face { font-family: "DM Mono"; src: url(./fonts/dm-mono-400.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "DM Mono"; src: url(./fonts/dm-mono-500.woff2) format("woff2"); font-weight: 500; font-display: swap; }
+:root {
+  --bg: #f6f5f1; --ink: #141414; --todo: #b9b6ad; --soft: #6c6a64; --rule: #dcd9d0; --red: #e0301e;
+  --font: "DM Mono"; --typed: 500; --untyped: 400;
+  color-scheme: light;
+}
+:root[data-theme="dark"] { --bg: #111111; --ink: #f1efe9; --todo: #4b4a47; --soft: #8f8c85; --rule: #262625; --red: #ff5a47; color-scheme: dark; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font), ui-monospace, monospace; font-size: 15px; line-height: 1.55; }
+a { color: inherit; text-underline-offset: 4px; }
+code { font-family: inherit; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 40px; }
+header .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.mark { font-weight: 500; font-size: 20px; text-decoration: none; }
+header nav { margin-left: auto; display: flex; gap: 22px; font-size: 14px; align-items: baseline; }
+header nav a, header nav button { text-decoration: none; color: var(--soft); background: none; border: 0; font: inherit; cursor: pointer; padding: 0; }
+header nav a:hover, header nav button:hover { color: var(--ink); }
+
+/* a prompt: typed letters are darker and heavier than the rest */
+.p { margin: 0; font-weight: var(--untyped); overflow-wrap: anywhere; cursor: text; }
+.p span { position: relative; transition: color .12s; }
+.p .u { color: var(--todo); }
+.p .c { color: var(--ink); font-weight: var(--typed); }
+.p .x { color: var(--red); font-weight: var(--typed); }
+.p .cur::before { content: ""; position: absolute; left: -.04em; top: .12em; bottom: .08em; width: .08em; background: var(--ink); }
+.p.tk-end::after { content: ""; display: inline-block; width: .08em; height: .9em; background: var(--ink); vertical-align: -.1em; }
+.p .pace { background: var(--ink); color: var(--bg); }
+.line:not(.tk-active) .p .cur::before, .line:not(.tk-active) .p.tk-end::after { opacity: .3; }
+.tk-input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; font-size: 16px; resize: none; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .p span { transition: none; } }
+
+/* hero */
+.hero { min-height: calc(100svh - 64px); display: flex; flex-direction: column; justify-content: center; padding: 24px 0 40px; }
+.hero .p { font-size: clamp(32px, 5.4vw, 92px); line-height: 1.22; max-width: none; }
+.hero .lead { font-size: 14px; color: var(--soft); margin: 0 0 28px; }
+.hero .lead b { color: var(--ink); }
+.meta { display: flex; flex-wrap: wrap; gap: 10px 26px; align-items: baseline; margin-top: 30px; font-size: 14px; color: var(--soft); }
+.meta .timer:empty { display: none; }
+.meta .timer { color: var(--ink); font-weight: 500; font-size: 18px; }
+.meta span { display: inline-flex; gap: 2px; align-items: baseline; }
+.meta button { font: inherit; background: none; border: 0; color: var(--soft); padding: 2px 5px; cursor: pointer; }
+.meta button[aria-pressed="true"] { color: var(--ink); font-weight: 500; text-decoration: underline; text-underline-offset: 5px; }
+.meta button:hover { color: var(--ink); }
+.meta .cmd { margin-left: auto; color: var(--ink); }
+.res[hidden], .run[hidden] { display: none; }
+.res .stats { font-size: clamp(30px, 4.6vw, 70px); line-height: 1.1; font-weight: var(--typed); margin: 0 0 18px; white-space: pre-wrap; }
+.res .stats i { font-style: normal; color: var(--soft); font-weight: 400; }
+.res .chart svg { width: 100%; max-width: 980px; height: auto; display: block; }
+.tk-dot { fill: var(--ink); }
+.tk-rule { stroke: var(--rule); }
+.tk-label { fill: var(--ink); font-family: var(--font), monospace; }
+.tk-sec { fill: var(--soft); font-family: var(--font), monospace; }
+.res .again { margin-top: 18px; font-size: 14px; color: var(--soft); }
+
+/* each typeable block is a screen of its own */
+.line { min-height: 100svh; display: flex; flex-direction: column; justify-content: center; border-top: 1px solid var(--rule); padding: 8vh 0; position: relative; }
+.line .p { font-size: clamp(38px, 7.2vw, 124px); line-height: 1.12; max-width: none; letter-spacing: -.01em; }
+.line .note { margin: 22px 0 0; font-size: 16px; color: var(--soft); max-width: 64ch; }
+.line .note code { color: var(--ink); }
+.line .after { margin-top: 8px; font-size: 13px; color: var(--soft); min-height: 20px; }
+.line .after b { color: var(--ink); }
+footer { border-top: 1px solid var(--rule); font-size: 13px; color: var(--soft); }
+footer .inst { padding: 56px 40px 40px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px 40px; align-items: baseline; }
+footer h2 { margin: 0; font-size: 13px; font-weight: 400; color: var(--soft); }
+footer .cmds { display: flex; flex-direction: column; gap: 10px; }
+footer .cmds p { margin: 0; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+footer code { font-size: 17px; color: var(--ink); transition: font-size .6s cubic-bezier(.2, .8, .2, 1); }
+footer .inst { transition: padding .6s cubic-bezier(.2, .8, .2, 1); }
+footer h2 { transition: font-size .6s cubic-bezier(.2, .8, .2, 1), color .6s; }
+footer.done .inst { padding-top: 14vh; padding-bottom: 14vh; }
+footer.done h2 { font-size: 18px; color: var(--ink); }
+footer.done code { font-size: clamp(22px, 3vw, 40px); }
+footer.done .cmds { gap: 18px; }
+@media (prefers-reduced-motion: reduce) { footer code, footer .inst, footer h2 { transition: none; } }
+footer .cmds button { font: inherit; font-size: 12px; background: none; border: 1px solid var(--rule); color: var(--soft); padding: 1px 8px; cursor: pointer; }
+footer .cmds button:hover { color: var(--ink); border-color: var(--soft); }
+footer .base { display: flex; flex-wrap: wrap; gap: 8px 28px; justify-content: space-between; background: linear-gradient(var(--rule), var(--rule)) no-repeat top / calc(100% - 80px) 1px; padding-top: 20px; padding-bottom: 40px; }
+@media (max-width: 760px) {
+  .meta .cmd { margin-left: 0; width: 100%; }
+  header nav .hide { display: none; }
+}
+@media (max-width: 600px) {
+  header nav { gap: 14px; }
+  .res .stats { font-size: 22px; }
+  .wrap { padding: 0 16px; }
+  .hero { padding: 20px 0 40px; }
+  footer .inst { padding: 40px 16px 32px; grid-template-columns: minmax(0, 1fr); }
+  footer code { font-size: 15px; }
+  footer.done code { font-size: 17px; }
+  footer .cmds p { flex-wrap: nowrap; }
+  footer .base { background-size: calc(100% - 32px) 1px; }
+}
+
+/* Nothing is painted before DM Mono is in, so the fallback font never shows and
+   nothing shifts when the real one arrives; the hero stays hidden while its
+   words load, for the same reason. */
+#root:not(.ready) { visibility: hidden; }
+.hero[data-booting] > * { visibility: hidden; }

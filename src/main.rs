@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod bench;
+mod history;
 mod lang;
 mod layout;
 mod thok;
@@ -5,34 +8,30 @@ mod ui;
 mod util;
 
 use crate::{lang::Language, thok::Thok};
-use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser, error::ErrorKind};
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
+    DefaultTerminal, Terminal,
+    backend::CrosstermBackend,
     crossterm::{
-        cursor::SetCursorStyle,
+        cursor::{SetCursorStyle, Show},
         event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
         execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
         tty::IsTty,
     },
-    Frame, Terminal,
 };
 use std::{
-    error::Error,
     io::{self, stdin},
-    sync::mpsc,
-    thread,
-    time::Duration,
+    mem,
+    ops::ControlFlow,
+    panic, thread,
+    time::Instant,
 };
-use webbrowser::Browser;
-
-const TICK_RATE_MS: u64 = 100;
 
 /// sleek typing tui with visualized results and historical logging
-#[derive(Parser, Debug, Clone)]
+#[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-pub struct Cli {
+struct Cli {
     /// number of words to use in test (initial buffer only when timed)
     #[arg(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
@@ -51,82 +50,143 @@ pub struct Cli {
     prompt: Option<String>,
 
     /// language to pull words from
-    #[arg(short = 'l', long, value_enum, default_value_t = SupportedLanguage::English)]
-    supported_language: SupportedLanguage,
+    #[arg(short = 'l', long, value_enum, default_value_t = Language::English)]
+    supported_language: Language,
 
     /// ghost caret pacing at this WPM to race against
     #[arg(long)]
     pace: Option<u16>,
+
+    /// end the test the moment you mistype a character
+    #[arg(short = 'd', long = "death-mode")]
+    death_mode: bool,
 }
 
-#[derive(Debug, Copy, Clone, ValueEnum, strum_macros::Display)]
-enum SupportedLanguage {
-    English,
-    English1k,
-    English10k,
-}
-
-impl SupportedLanguage {
-    fn as_lang(&self) -> Language {
-        Language::new(self.to_string().to_lowercase())
-    }
-}
-
-#[derive(Debug)]
 struct App {
     cli: Cli,
     thok: Thok,
+    /// The first failure to write the history log, reported on exit.
+    save_error: Option<io::Error>,
 }
 
 impl App {
-    /// Continuous (timed) mode streams fresh words until the clock stops. It
-    /// applies only to the default word mode with `-s`; a custom prompt or
-    /// sentence mode is finite text, so it always ends at its own length.
-    fn is_continuous(cli: &Cli) -> bool {
-        cli.number_of_secs.is_some() && cli.prompt.is_none() && cli.number_of_sentences.is_none()
+    fn new(cli: Cli) -> Self {
+        let (prompt, word_count) = Self::generate_prompt(&cli);
+        Self {
+            thok: Self::new_thok(&cli, prompt, word_count),
+            cli,
+            save_error: None,
+        }
     }
 
     /// (prompt, word_count) per the CLI flags.
     fn generate_prompt(cli: &Cli) -> (String, usize) {
-        if let Some(p) = &cli.prompt {
-            (p.clone(), cli.number_of_words)
-        } else if let Some(n) = cli.number_of_sentences {
-            let language = cli.supported_language.as_lang();
-            let (s, count) = language.get_random_sentence(n);
-            (s.join(""), count)
+        if let Some(prompt) = &cli.prompt {
+            (prompt.clone(), cli.number_of_words)
+        } else if let Some(count) = cli.number_of_sentences {
+            lang::random_sentences(count)
         } else {
-            let language = cli.supported_language.as_lang();
-            (
-                language.get_random(cli.number_of_words).join(" "),
-                cli.number_of_words,
-            )
+            let words = cli.supported_language.random_words(cli.number_of_words);
+            (words, cli.number_of_words)
         }
     }
 
-    /// Build a fresh `Thok` for `cli`, wiring up pacing and — in continuous
-    /// mode — the refill word pool that keeps the prompt topped up.
-    fn build_thok(cli: &Cli, prompt: String, count: usize) -> Thok {
-        let mut thok = Thok::new(prompt, count, cli.number_of_secs.map(|ns| ns as f64));
+    /// A timed test on the default words streams fresh ones until the clock
+    /// stops. A custom prompt or sentences are fixed text, so they end at
+    /// their own length.
+    fn is_continuous(cli: &Cli) -> bool {
+        cli.number_of_secs.is_some() && cli.prompt.is_none() && cli.number_of_sentences.is_none()
+    }
+
+    fn new_thok(cli: &Cli, prompt: String, word_count: usize) -> Thok {
+        let number_of_secs = cli.number_of_secs.map(|secs| secs as f64);
+        let mut thok = Thok::new(prompt, word_count, number_of_secs);
         thok.pace_wpm = cli.pace.map(f64::from);
+        thok.death_mode = cli.death_mode;
         if Self::is_continuous(cli) {
-            thok.refill_words = cli.supported_language.as_lang().word_pool();
+            thok.refill_words = cli.supported_language.word_pool();
+            // so the prompt has its full length from the first frame
+            thok.refill_if_needed();
         }
         thok
     }
 
-    fn new(cli: Cli) -> Self {
-        let (prompt, count) = Self::generate_prompt(&cli);
-        let thok = Self::build_thok(&cli, prompt, count);
-        Self { thok, cli }
+    /// Starts over with the same prompt.
+    fn restart(&mut self) {
+        let prompt = mem::take(&mut self.thok.prompt);
+        self.thok = Self::new_thok(&self.cli, prompt, self.thok.number_of_words);
     }
 
-    fn reset(&mut self, new_prompt: Option<String>) {
-        let (prompt, count) = match new_prompt {
-            Some(p) => (p, self.thok.number_of_words),
-            None => Self::generate_prompt(&self.cli),
-        };
-        self.thok = Self::build_thok(&self.cli, prompt, count);
+    /// Starts over with a new prompt.
+    fn new_test(&mut self) {
+        let (prompt, word_count) = Self::generate_prompt(&self.cli);
+        self.thok = Self::new_thok(&self.cli, prompt, word_count);
     }
+
+    fn draw(&self, frame: &mut ratatui::Frame) {
+        ui::draw(frame, &self.thok);
+    }
+
+    fn on_key(&mut self, key: KeyEvent) -> ControlFlow<()> {
+        let finished = self.thok.has_finished();
+        match key.code {
+            KeyCode::Esc => return ControlFlow::Break(()),
+            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return ControlFlow::Break(());
+            }
+            KeyCode::Left => self.restart(),
+            KeyCode::Right => self.new_test(),
+            KeyCode::Backspace if !finished => self.thok.backspace(),
+            KeyCode::Char(c) if !finished => {
+                self.thok.write(c);
+                self.save_if_finished();
+            }
+            KeyCode::Char('r') => self.restart(),
+            KeyCode::Char('n') => self.new_test(),
+            _ => {}
+        }
+        ControlFlow::Continue(())
+    }
+
+    fn on_tick(&mut self) {
+        self.thok.on_tick();
+        self.save_if_finished();
+    }
+
+    /// Call after anything that can end the test: a key press or a tick.
+    fn save_if_finished(&mut self) {
+        if self.thok.has_finished() {
+            self.thok.calc_results();
+            if self.thok.died() {
+                return;
+            }
+            if let Err(error) = history::append(&self.thok) {
+                self.save_error.get_or_insert(error);
+            }
+        }
+    }
+}
+
+fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+
+    if !stdin().is_tty() {
+        let mut cmd = Cli::command();
+        cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
+    }
+
+    let mut app = App::new(cli);
+    let result = run_in_terminal(&mut app);
+
+    // only now is the terminal back in a state where this can be read
+    if let Some(error) = app.save_error {
+        let log = history::path().unwrap_or_default();
+        eprintln!(
+            "thokr: could not save results to {}: {error}",
+            log.display()
+        );
+    }
+    result
 }
 
 /// Best-effort terminal restore; used on panic and on exit.
@@ -135,190 +195,80 @@ fn restore_terminal() {
     let _ = execute!(
         io::stdout(),
         SetCursorStyle::DefaultUserShape,
-        LeaveAlternateScreen
+        LeaveAlternateScreen,
+        Show
     );
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
+/// Restores the terminal when dropped, so every way out of
+/// `run_in_terminal` (return or `?`) leaves it usable.
+struct TerminalGuard;
 
-    if !stdin().is_tty() {
-        let mut cmd = Cli::command();
-        cmd.error(ErrorKind::Io, "stdin must be a tty").exit();
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        // After a panic the hook has restored the terminal already. Leaving
+        // the alternate screen a second time would move the cursor back up,
+        // and the shell prompt would overwrite the panic message.
+        if !thread::panicking() {
+            restore_terminal();
+        }
     }
+}
 
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
+fn run_in_terminal(app: &mut App) -> io::Result<()> {
+    // a panic message is only readable once the alternate screen is left
+    let default_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
         restore_terminal();
         default_hook(info);
     }));
 
     enable_raw_mode()?;
+    let _guard = TerminalGuard;
 
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, SetCursorStyle::SteadyBar)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let mut app = App::new(cli);
-    let res = start_tui(&mut terminal, &mut app);
-
-    restore_terminal();
-    terminal.show_cursor()?;
-
-    res
+    run(&mut terminal, app)
 }
 
-enum ExitType {
-    Restart,
-    New,
-    Quit,
-}
-fn start_tui<B: Backend>(
-    terminal: &mut Terminal<B>,
-    mut app: &mut App,
-) -> Result<(), Box<dyn Error>>
-where
-    <B as Backend>::Error: 'static,
-{
-    let should_tick = app.cli.number_of_secs.unwrap_or(0) > 0 || app.cli.pace.is_some();
-
-    let thok_events = get_thok_events(should_tick);
-
+fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
-        let mut exit_type: ExitType = ExitType::Quit;
-        terminal.draw(|f| ui(app, f))?;
+        terminal.draw(|frame| app.draw(frame))?;
 
-        loop {
-            let app = &mut app;
-
-            match thok_events.recv()? {
-                ThokEvent::Tick => {
-                    if app.thok.has_started() && !app.thok.has_finished() {
-                        app.thok.on_tick();
-
-                        if app.thok.has_finished() {
-                            app.thok.calc_results();
-                            let _ = app.thok.save_results();
-                        }
-                        terminal.draw(|f| ui(app, f))?;
-                    }
-                }
-                ThokEvent::Resize => {
-                    terminal.draw(|f| ui(app, f))?;
-                }
-                ThokEvent::Key(key) => {
-                    match key.code {
-                        KeyCode::Esc => {
-                            break;
-                        }
-                        KeyCode::Backspace if !app.thok.has_finished() => {
-                            app.thok.backspace();
-                        }
-                        KeyCode::Left => {
-                            exit_type = ExitType::Restart;
-                            break;
-                        }
-                        KeyCode::Right => {
-                            exit_type = ExitType::New;
-                            break;
-                        }
-                        KeyCode::Char(c) => {
-                            if key.modifiers.contains(KeyModifiers::CONTROL)
-                                && key.code == KeyCode::Char('c')
-                            // ctrl+c to quit
-                            {
-                                break;
-                            }
-
-                            match app.thok.has_finished() {
-                                false => {
-                                    app.thok.write(c);
-                                    if app.thok.has_finished() {
-                                        app.thok.calc_results();
-                                        let _ = app.thok.save_results();
-                                    }
-                                }
-                                true => match key.code {
-                                    KeyCode::Char('t') if Browser::is_available() => {
-                                        webbrowser::open(&format!("https://twitter.com/intent/tweet?text={}%20wpm%20%2F%20{}%25%20acc%20%2F%20{:.2}%20sd%0A%0Ahttps%3A%2F%2Fgithub.com%2Fthatvegandev%2Fthokr", app.thok.wpm, app.thok.accuracy, app.thok.std_dev))
-                                    .unwrap_or_default();
-                                    }
-                                    KeyCode::Char('r') => {
-                                        exit_type = ExitType::Restart;
-                                        break;
-                                    }
-                                    KeyCode::Char('n') => {
-                                        exit_type = ExitType::New;
-                                        break;
-                                    }
-                                    _ => {}
-                                },
-                            }
-                        }
-                        _ => {}
-                    }
-                    terminal.draw(|f| ui(app, f))?;
+        match next_input(app.thok.next_tick())? {
+            Input::Key(key) => {
+                if app.on_key(key).is_break() {
+                    return Ok(());
                 }
             }
-        }
-
-        match exit_type {
-            ExitType::Restart => {
-                app.reset(Some(app.thok.prompt.clone()));
-            }
-            ExitType::New => {
-                app.reset(None);
-            }
-            ExitType::Quit => {
-                break;
-            }
+            Input::Tick => app.on_tick(),
+            Input::Resize => {}
         }
     }
-
-    Ok(())
 }
 
-#[derive(Clone)]
-enum ThokEvent {
+/// What the loop reacts to; each of them is followed by a redraw.
+enum Input {
     Key(KeyEvent),
     Resize,
     Tick,
 }
 
-fn get_thok_events(should_tick: bool) -> mpsc::Receiver<ThokEvent> {
-    let (tx, rx) = mpsc::channel();
-
-    if should_tick {
-        let tick_x = tx.clone();
-        thread::spawn(move || loop {
-            if tick_x.send(ThokEvent::Tick).is_err() {
-                break;
+/// Waits for the next key press or resize, or for `tick_at` if that comes first.
+fn next_input(tick_at: Option<Instant>) -> io::Result<Input> {
+    loop {
+        if let Some(tick_at) = tick_at {
+            let wait = tick_at.saturating_duration_since(Instant::now());
+            if !event::poll(wait)? {
+                return Ok(Input::Tick);
             }
-
-            thread::sleep(Duration::from_millis(TICK_RATE_MS))
-        });
-    }
-
-    thread::spawn(move || loop {
-        let evt = match event::read().unwrap() {
-            Event::Key(key) if key.kind == KeyEventKind::Press => Some(ThokEvent::Key(key)),
-            Event::Key(_) => None,
-            Event::Resize(_, _) => Some(ThokEvent::Resize),
-            _ => None,
-        };
-
-        if evt.is_some() && tx.send(evt.unwrap()).is_err() {
-            break;
         }
-    });
-
-    rx
-}
-
-fn ui(app: &mut App, f: &mut Frame) {
-    f.render_widget(&app.thok, f.area());
-    if let Some(pos) = ui::cursor_screen_position(&app.thok, f.area()) {
-        f.set_cursor_position(pos);
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => return Ok(Input::Key(key)),
+            Event::Resize(_, _) => return Ok(Input::Resize),
+            _ => {}
+        }
     }
 }

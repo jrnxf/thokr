@@ -1,30 +1,22 @@
 pub fn mean(data: &[f64]) -> Option<f64> {
-    let sum = data.iter().sum::<f64>();
-    let count = data.len();
-
-    match count {
-        positive if positive > 0 => Some(sum / count as f64),
-        _ => None,
+    if data.is_empty() {
+        return None;
     }
+    Some(data.iter().sum::<f64>() / data.len() as f64)
 }
 
+/// Population standard deviation; None for no data.
 pub fn std_dev(data: &[f64]) -> Option<f64> {
-    match (mean(data), data.len()) {
-        (Some(data_mean), count) if count > 0 => {
-            let variance = data
-                .iter()
-                .map(|value| {
-                    let diff = data_mean - *value;
-
-                    diff * diff
-                })
-                .sum::<f64>()
-                / count as f64;
-
-            Some(variance.sqrt())
-        }
-        _ => None,
-    }
+    let mean = mean(data)?;
+    let variance = data
+        .iter()
+        .map(|value| {
+            let diff = mean - value;
+            diff * diff
+        })
+        .sum::<f64>()
+        / data.len() as f64;
+    Some(variance.sqrt())
 }
 
 #[cfg(test)]

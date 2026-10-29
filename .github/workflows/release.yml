@@ -1,0 +1,276 @@
+name: release
+
+# Builds thokr for macOS and Linux, publishes the binaries as a GitHub release, publishes the crate
+# and points the Homebrew formula at the new binaries, so `brew install` needs no Rust toolchain.
+#
+# - A tag `v<version>` pushed by hand publishes that release. The tag must match the version in
+#   Cargo.toml, so bump it in a commit before tagging. A tag with a hyphen publishes a GitHub
+#   pre-release only: it never shows as Latest, and neither crates.io nor the formula follow it.
+# - A pull request that changes this file or the dependencies builds every binary without
+#   publishing, to prove the build before a release depends on it. Running the workflow by hand
+#   (workflow_dispatch) does the same.
+#
+# The release's assets, each with a `.sha256`: thokr-<version>-<target>.tar.gz for
+# aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-musl and
+# aarch64-unknown-linux-musl. The Linux binaries are static, so they run on any Linux, whatever its
+# C library. Each archive holds one folder, thokr-<version>-<target>/, with the executable thokr,
+# README.md and LICENSE.md.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - Cargo.lock
+      - Cargo.toml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request makes the older build pointless; a release always finishes.
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+          # Built on Apple silicon, as GitHub's Intel Macs are going away, and run under Rosetta.
+          - target: x86_64-apple-darwin
+            os: macos-15
+          # Each Linux binary is built on its own architecture, so it can be run before it ships.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Choose the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "ASSET=thokr-$version-$TARGET" >> "$GITHUB_ENV"
+          echo "version $version"
+
+      - name: Install the Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target "$TARGET"
+          rustup default stable
+
+      - name: Build
+        run: cargo build --release --locked --target "$TARGET"
+
+      - name: Run
+        run: |
+          bin=target/$TARGET/release/thokr
+          if [ "$TARGET" = x86_64-apple-darwin ]; then
+            run() { arch -x86_64 "$bin" "$@"; }
+          else
+            run() { "$bin" "$@"; }
+          fi
+          reported=$(run --version)
+          echo "$reported"
+          if [ "$reported" != "thokr $VERSION" ]; then
+            echo "expected thokr $VERSION" >&2
+            exit 1
+          fi
+          file "$bin"
+          if [ "$RUNNER_OS" = Linux ] && ! file -b "$bin" | grep -Eq 'static(ally|-pie) linked'; then
+            echo "expected a static binary" >&2
+            exit 1
+          fi
+
+      # COPYFILE_DISABLE keeps macOS's tar from adding ._ files for extended attributes.
+      - name: Package
+        env:
+          COPYFILE_DISABLE: 1
+        run: |
+          mkdir "$ASSET"
+          install -m 0755 "target/$TARGET/release/thokr" "$ASSET/thokr"
+          cp README.md LICENSE.md "$ASSET/"
+          tar -czf "$ASSET.tar.gz" "$ASSET"
+          shasum -a 256 "$ASSET.tar.gz" > "$ASSET.tar.gz.sha256"
+          cat "$ASSET.tar.gz.sha256"
+          tar -tvzf "$ASSET.tar.gz"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ASSET }}
+          path: |
+            ${{ env.ASSET }}.tar.gz
+            ${{ env.ASSET }}.tar.gz.sha256
+          if-no-files-found: error
+
+  # Gathers the release's files in one artifact on every run, so a pull request proves the whole set.
+  assets:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: assets
+          merge-multiple: true
+
+      # Each archive must hold exactly the files the formula installs, with thokr executable.
+      - name: Check
+        working-directory: assets
+        run: |
+          shasum -a 256 -c ./*.sha256
+          for archive in thokr-*.tar.gz; do
+            dir=${archive%.tar.gz}
+            listed=$(tar -tzf "$archive" | sed 's|/$||' | sort)
+            expected=$(printf '%s\n' "$dir" "$dir/LICENSE.md" "$dir/README.md" "$dir/thokr" | sort)
+            if [ "$listed" != "$expected" ]; then
+              echo "$archive does not hold the expected files" >&2
+              tar -tvzf "$archive"
+              exit 1
+            fi
+            if ! tar -tvzf "$archive" "$dir/thokr" | grep -q '^-rwxr-xr-x'; then
+              echo "$archive: thokr is not mode 0755" >&2
+              exit 1
+            fi
+          done
+          ls -l
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release
+          path: assets/*
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push'
+    needs: assets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release
+          path: assets
+
+      - name: Publish the release
+        run: |
+          flags=(--generate-notes --verify-tag)
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" assets/*
+
+  crate:
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Publish the crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+        run: cargo publish --locked --no-verify
+
+  # Points jrnxf/homebrew-tap's Formula/thokr.rb at this release's archives. The tap's
+  # docs/automatic-updates.md issues the TAP_DEPLOY_KEY secret this needs.
+  tap:
+    if: github.event_name == 'push' && !contains(github.ref_name, '-')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Check for the tap's key
+        env:
+          KEY_SET: ${{ secrets.TAP_DEPLOY_KEY != '' }}
+        run: |
+          if [ "$KEY_SET" != true ]; then
+            echo "::error::TAP_DEPLOY_KEY is not set, so Formula/thokr.rb was not updated: see jrnxf/homebrew-tap docs/automatic-updates.md"
+            exit 1
+          fi
+
+      # Pinned to a commit: this job holds the key that can push to the tap brew installs from.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: jrnxf/homebrew-tap
+          ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
+
+      # The formula used to build from the source archive with cargo. The first release from this
+      # workflow rewrites it to install the binary, keeping cargo for `brew install --HEAD`; later
+      # releases leave its shape alone and only move its urls.
+      - name: Install the binary, not build it
+        run: |
+          if grep -q 'build.head?' Formula/thokr.rb; then
+            exit 0
+          fi
+          cat > Formula/thokr.rb <<'EOF'
+          class Thokr < Formula
+            desc "sleek typing tui with visualized results and historical logging"
+            homepage "https://github.com/jrnxf/thokr"
+            license "MIT"
+
+            head do
+              url "https://github.com/jrnxf/thokr.git", branch: "main"
+              depends_on "rust" => :build
+            end
+
+            def install
+              if build.head?
+                system "cargo", "install", *std_cargo_args
+              else
+                # A release is one archive per system and architecture, holding a prebuilt binary.
+                bin.install "thokr"
+              end
+            end
+
+            test do
+              assert_match(/thokr \d+\.\d+\.\d+/, shell_output("#{bin}/thokr --version"))
+            end
+          end
+          EOF
+
+      # The binary mode downloads each asset from the release and checks it against its .sha256.
+      - run: |
+          version=${TAG#v}
+          scripts/bump-formula.sh thokr "$TAG" \
+            macos-arm="thokr-$version-aarch64-apple-darwin.tar.gz" \
+            macos-intel="thokr-$version-x86_64-apple-darwin.tar.gz" \
+            linux-arm="thokr-$version-aarch64-unknown-linux-musl.tar.gz" \
+            linux-intel="thokr-$version-x86_64-unknown-linux-musl.tar.gz"
+
+      - run: |
+          if git diff --quiet; then
+            echo "Formula/thokr.rb already points at $TAG"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "thokr $TAG"
+          git push

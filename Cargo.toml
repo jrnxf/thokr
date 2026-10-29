@@ -1,27 +1,29 @@
 [package]
 name = "thokr"
 description = "sleek typing tui with visualized results and historical logging"
-version = "0.5.0"
+version = "0.6.1"
 readme = "README.md"
-repository = "https://github.com/thatvegandev/thokr.git"
-homepage = "https://github.com/thatvegandev/thokr"
+repository = "https://github.com/jrnxf/thokr.git"
+homepage = "https://github.com/jrnxf/thokr"
 license = "MIT"
-authors = ["Colby Thomas <thatvegandev@gmail.com>"]
-edition = "2021"
-exclude = [".github", "*.log", "Dockerfile", "plans"]
+authors = ["Colby Thomas <colby@jrnxf.co>"]
+edition = "2024"
+rust-version = "1.88"
+exclude = [".github", "*.log", "plans", "assets", "web"]
 keywords = ["tui", "terminal", "typing"]
 
 [dependencies]
-ratatui = "0.30.1"
-serde = { version = "1.0", features = ["derive"] }
-clap = { version = "4", features = ["derive"] }
-serde_json = "1.0.79"
-rand = "0.8.5"
-itertools = "0.10.3"
-unicode-width = "0.1.9"
-webbrowser = "0.7.1"
-strum_macros = "0.24.0"
-include_dir = "0.7.2"
-directories = "4.0"
-chrono = "0.4"
 cgisf_lib = "0.1.3"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+clap = { version = "4.6", features = ["derive"] }
+directories = "6.0"
+rand = "0.8.5"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm", "layout-cache"] }
+
+[dev-dependencies]
+insta = "1.49"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
