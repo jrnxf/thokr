@@ -57,61 +57,89 @@ fn render(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
     }
 }
 
+/// Where the prompt goes on the test screen. The death screen reuses it, so
+/// the lines being typed stay exactly where they were.
+struct PromptLayout {
+    /// the wrapped lines shown, as ranges of the prompt chars
+    lines: Vec<Range<usize>>,
+    timer_area: Rect,
+    prompt_area: Rect,
+}
+
+impl PromptLayout {
+    /// The layout while the cursor is at char `cursor` of the prompt.
+    fn new(thok: &Thok, area: Rect, cursor: usize) -> Self {
+        // the wrapped lines place both the text and the cursor (1:1 char to cell)
+        let max_chars_per_line = line_width(area);
+        let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
+        // the window of lines around the cursor; a prompt that fits shows whole
+        let cursor_line = layout::char_cell(&wrapped, cursor)
+            .map_or(wrapped.len().saturating_sub(1), |(line_no, _)| line_no);
+        let shown = wrapped.len().min(MAX_VISIBLE_LINES);
+        let first = cursor_line
+            .saturating_sub(WINDOW_LEAD)
+            .min(wrapped.len() - shown);
+        let lines = wrapped[first..first + shown].to_vec();
+        let prompt_lines = lines.len() as u16;
+        let timer_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
+        let padding = area.height.saturating_sub(prompt_lines) / 2;
+
+        let [_, timer_area, prompt_area, _] = Layout::vertical([
+            Constraint::Length(padding),
+            Constraint::Length(timer_lines),
+            Constraint::Length(prompt_lines),
+            Constraint::Length(padding),
+        ])
+        .horizontal_margin(HORIZONTAL_MARGIN)
+        .areas(area);
+        Self {
+            lines,
+            timer_area,
+            prompt_area,
+        }
+    }
+
+    /// Draws the prompt `text` (one `Line` per shown line) and returns the
+    /// column it starts in.
+    fn render_text(&self, text: Vec<Line>, area: Rect, buf: &mut Buffer) -> u16 {
+        let prompt_area = self.prompt_area;
+        // when the prompt is small enough to fit on one line
+        // centering the text gives a nice zen feeling
+        let x_offset = match text.as_slice() {
+            [line] => (prompt_area.width / 2).saturating_sub(line.width() as u16 / 2),
+            _ => 0,
+        };
+        let x = prompt_area.x + x_offset;
+        // one extra column into the right margin so a space hanging off a full
+        // line (see layout::wrap_chars) is drawn, not clipped
+        let text_area = Rect {
+            x,
+            width: (prompt_area.width - x_offset + 1).min(area.right().saturating_sub(x)),
+            ..prompt_area
+        };
+        Paragraph::new(text).render(text_area, buf);
+        x
+    }
+}
+
 fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
-    // the wrapped lines place both the text and the cursor (1:1 char to cell)
-    let max_chars_per_line = line_width(area);
-    let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
-    // the window of lines around the cursor; a prompt that fits shows whole
-    let cursor_line = layout::char_cell(&wrapped, thok.input.len())
-        .map_or(wrapped.len().saturating_sub(1), |(line_no, _)| line_no);
-    let shown = wrapped.len().min(MAX_VISIBLE_LINES);
-    let first = cursor_line
-        .saturating_sub(WINDOW_LEAD)
-        .min(wrapped.len() - shown);
-    let lines = &wrapped[first..first + shown];
-    let prompt_lines = lines.len() as u16;
-    let timer_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
-    let padding = area.height.saturating_sub(prompt_lines) / 2;
-
-    let [_, timer_area, prompt_area, _] = Layout::vertical([
-        Constraint::Length(padding),
-        Constraint::Length(timer_lines),
-        Constraint::Length(prompt_lines),
-        Constraint::Length(padding),
-    ])
-    .horizontal_margin(HORIZONTAL_MARGIN)
-    .areas(area);
-
+    let view = PromptLayout::new(thok, area, thok.input.len());
     let pace = thok.pace_caret_index();
-    let text: Vec<Line> = lines
+    let text: Vec<Line> = view
+        .lines
         .iter()
         .map(|line| prompt_line(thok, line.clone(), pace))
         .collect();
-
-    // when the prompt is small enough to fit on one line
-    // centering the text gives a nice zen feeling
-    let x_offset = match text.as_slice() {
-        [line] => (prompt_area.width / 2).saturating_sub(line.width() as u16 / 2),
-        _ => 0,
-    };
-    let x = prompt_area.x + x_offset;
-    // one extra column into the right margin so a space hanging off a full
-    // line (see layout::wrap_chars) is drawn, not clipped
-    let text_area = Rect {
-        x,
-        width: (prompt_area.width - x_offset + 1).min(area.right().saturating_sub(x)),
-        ..prompt_area
-    };
-    Paragraph::new(text).render(text_area, buf);
+    let x = view.render_text(text, area, buf);
 
     if let Some(secs) = thok.seconds_remaining {
         Paragraph::new(Span::styled(format!("{secs:.1}"), UNTYPED))
             .alignment(Alignment::Center)
-            .render(timer_area, buf);
+            .render(view.timer_area, buf);
     }
 
-    let (line_no, col) = layout::char_cell(lines, thok.input.len())?;
-    Some(Position::new(x + col, prompt_area.y + line_no as u16))
+    let (line_no, col) = layout::char_cell(&view.lines, thok.input.len())?;
+    Some(Position::new(x + col, view.prompt_area.y + line_no as u16))
 }
 
 /// One wrapped line of the prompt. Typed chars are green or red, the rest
@@ -398,22 +426,16 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
     .render(legend_area, buf);
 }
 
-/// The screen after a death-mode run ends on a mistake: what went wrong,
-/// the prompt around it and how far the run got.
+/// The screen after a death-mode run ends on a mistake: the prompt exactly
+/// where it was on the test screen, the skull above it and how far the run
+/// got below.
 fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     // the run ends on its first mistake, so that is the last key
     let dead_at = thok.input.len().saturating_sub(1);
-    let expected = thok.prompt_chars[dead_at];
-    let pressed = thok.input[dead_at].char;
 
-    let max_chars_per_line = line_width(area);
-    let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
-    let death_line = layout::char_cell(&wrapped, dead_at).map_or(0, |(line_no, _)| line_no);
-    let shown = wrapped.len().min(MAX_VISIBLE_LINES);
-    let first = death_line
-        .saturating_sub(WINDOW_LEAD)
-        .min(wrapped.len() - shown);
-    let lines = &wrapped[first..first + shown];
+    // the cursor was on the fatal char the moment before the key, so the
+    // window of lines is the one the test screen last showed
+    let view = PromptLayout::new(thok, area, dead_at);
 
     // the word that was being typed, spaces excluded
     let word_start = thok.prompt_chars[..dead_at]
@@ -425,7 +447,8 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
         .position(|&c| c == ' ')
         .map_or(thok.prompt_chars.len(), |i| dead_at + i);
 
-    let text: Vec<Line> = lines
+    let text: Vec<Line> = view
+        .lines
         .iter()
         .map(|line| {
             let mut spans: Vec<Span> = Vec::new();
@@ -451,46 +474,41 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
             Line::from(spans)
         })
         .collect();
+    view.render_text(text, area, buf);
 
     let words = thok.prompt_chars[..word_start]
         .iter()
         .filter(|&&c| c == ' ')
         .count();
-    // the block is centred on the screen, the key hints sit bottom left as
-    // on the results screen
     let [content_area, legend_area] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)])
         .horizontal_margin(HORIZONTAL_MARGIN)
         .vertical_margin(VERTICAL_MARGIN)
         .areas(area);
-    let [title_area, _, what_area, _, prompt_area, _, stats_area] = Layout::vertical([
+    // the skull sits where it always has: at the top of a block (skull, gap,
+    // blank row for the old "expected" line, gap, prompt, gap, stats) centred
+    // in the content area
+    let title_area = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
-        Constraint::Length(text.len() as u16),
+        Constraint::Length(view.lines.len() as u16),
         Constraint::Length(1),
         Constraint::Length(1),
     ])
     .flex(Flex::Center)
-    .areas(content_area);
+    .split(content_area)[0];
+    let stats_area = Rect {
+        y: view.prompt_area.bottom() + 1,
+        height: 1,
+        ..view.prompt_area
+    }
+    .intersection(area);
 
     let centered = Alignment::Center;
     Paragraph::new(Span::styled("\u{1F480}", INCORRECT))
         .alignment(centered)
         .render(title_area, buf);
-    Paragraph::new(Span::styled(
-        format!(
-            "expected {}, pressed {}",
-            show_key(expected),
-            show_key(pressed)
-        ),
-        BOLD,
-    ))
-    .alignment(centered)
-    .render(what_area, buf);
-    Paragraph::new(text)
-        .alignment(centered)
-        .render(prompt_area, buf);
     let word_count = if words == 1 { "word" } else { "words" };
     Paragraph::new(Span::styled(
         format!(
@@ -506,15 +524,6 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
         Style::new().add_modifier(Modifier::ITALIC),
     ))
     .render(legend_area, buf);
-}
-
-/// A key as the death screen names it: a space would be invisible.
-fn show_key(c: char) -> String {
-    if c == ' ' {
-        "space".to_string()
-    } else {
-        format!("'{c}'")
-    }
 }
 
 #[cfg(test)]
@@ -1091,10 +1100,79 @@ mod tests {
     }
 
     #[test]
-    fn death_screen_names_a_mistyped_space() {
+    fn death_screen_has_no_expected_vs_pressed_line() {
         let screen = screen_text(&buffer(&died_in_death_mode("the quick brown foxx"), 80, 24));
         assert!(screen.contains("\u{1F480}"));
-        assert!(screen.contains("expected space, pressed 'x'"));
+        assert!(!screen.contains("expected"));
+        assert!(!screen.contains("pressed"));
+    }
+
+    /// The cells of the rows the prompt text sits in on the test screen.
+    fn prompt_rows(thok: &Thok, width: u16, height: u16) -> Vec<(u16, String)> {
+        let buf = buffer(thok, width, height);
+        (0..height)
+            .filter(|&y| row_text(&buf, y).chars().any(char::is_alphabetic))
+            .map(|y| (y, row_text(&buf, y)))
+            .collect()
+    }
+
+    #[test]
+    fn the_prompt_does_not_move_from_the_last_test_frame_to_the_death_frame() {
+        let cases = [
+            (PROMPT, "the quick brx", None, 80, 24),
+            (PROMPT, "the quick brown foxx", None, 80, 24),
+            (PROMPT, "x", None, 80, 24),
+            (PROMPT, "the quick brx", None, 30, 12),
+            (
+                LONG_PROMPT,
+                "it was the best of times it was the worst of times it was the age of wix",
+                None,
+                60,
+                24,
+            ),
+            // the fatal key sits on the first char of a line
+            (
+                LONG_PROMPT,
+                "it was the best of times it was the worst of times it was the age of wisdom it was tx",
+                None,
+                50,
+                24,
+            ),
+            (LONG_PROMPT, "it was the bx", Some(30.0), 80, 24),
+            (PROMPT, "the quick brx", Some(30.0), 100, 40),
+        ];
+        for (prompt, typed, secs, width, height) in cases {
+            let (fatal, before) = typed.split_at(typed.len() - 1);
+            let _ = before;
+            let mut last_test = Thok::typed(prompt, fatal, secs, &[]);
+            last_test.death_mode = true;
+            assert!(!last_test.died());
+            let mut dead = Thok::typed(prompt, typed, secs, &[]);
+            dead.death_mode = true;
+            assert!(dead.died());
+
+            let running = prompt_rows(&last_test, width, height);
+            let death = prompt_rows(&dead, width, height);
+            // the skull and stats rows carry no letters worth comparing, but
+            // the stats line does: keep only the rows of the prompt itself
+            let rows: Vec<_> = death
+                .iter()
+                .filter(|(y, _)| running.iter().any(|(ry, _)| ry == y))
+                .collect();
+            assert_eq!(
+                rows.len(),
+                running.len(),
+                "{typed:?} at {width}x{height}: prompt rows moved"
+            );
+            for ((ry, rtext), (dy, dtext)) in running.iter().zip(rows) {
+                assert_eq!(ry, dy, "{typed:?} at {width}x{height}");
+                assert_eq!(
+                    rtext.replace('\u{1F480}', " ").trim_end(),
+                    dtext.trim_end(),
+                    "{typed:?} at {width}x{height}: row {ry} changed"
+                );
+            }
+        }
     }
 
     #[test]
