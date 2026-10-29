@@ -20,7 +20,9 @@ const ui = await readFile(new URL("src/ui.rs", root), "utf8");
 const snapshotDir = new URL("src/snapshots/", root);
 const names = (await readdir(fileURLToPath(snapshotDir)))
   .filter((f) => f.startsWith("thokr__ui__tests__") && f.endsWith(".snap"))
-  .map((f) => f.slice("thokr__ui__tests__".length, -".snap".length));
+  .map((f) => f.slice("thokr__ui__tests__".length, -".snap".length))
+  // the page has no death mode, so there is no death screen to draw
+  .filter((n) => !n.startsWith("death_screen_"));
 
 /** A snapshot as { rows, cursor }: the screen's lines and the cursor line. */
 async function snapshot(name, height) {
