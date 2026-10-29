@@ -41,7 +41,10 @@ pub fn draw(frame: &mut Frame, thok: &Thok) {
 
 /// Returns where the cursor belongs; the results screen has none.
 fn render(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
-    if thok.has_finished() {
+    if thok.died() {
+        render_death(thok, area, buf);
+        None
+    } else if thok.has_finished() {
         render_results(thok, area, buf);
         None
     } else {
@@ -388,6 +391,132 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
         Style::new().add_modifier(Modifier::ITALIC),
     ))
     .render(legend_area, buf);
+}
+
+/// The screen after a death-mode run ends on a mistake: what went wrong,
+/// the prompt around it and how far the run got.
+fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
+    // the run ends on its first mistake, so that is the last key
+    let dead_at = thok.input.len().saturating_sub(1);
+    let expected = thok.prompt_chars[dead_at];
+    let pressed = thok.input[dead_at].char;
+
+    let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
+    let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
+    let death_line = layout::char_cell(&wrapped, dead_at).map_or(0, |(line_no, _)| line_no);
+    let shown = wrapped.len().min(MAX_VISIBLE_LINES);
+    let first = death_line
+        .saturating_sub(WINDOW_LEAD)
+        .min(wrapped.len() - shown);
+    let lines = &wrapped[first..first + shown];
+
+    // the word that was being typed, spaces excluded
+    let word_start = thok.prompt_chars[..dead_at]
+        .iter()
+        .rposition(|&c| c == ' ')
+        .map_or(0, |i| i + 1);
+    let word_end = thok.prompt_chars[dead_at..]
+        .iter()
+        .position(|&c| c == ' ')
+        .map_or(thok.prompt_chars.len(), |i| dead_at + i);
+
+    let text: Vec<Line> = lines
+        .iter()
+        .map(|line| {
+            let mut spans: Vec<Span> = Vec::new();
+            for idx in line.clone() {
+                let char = thok.prompt_chars[idx];
+                let style = if idx == dead_at {
+                    INCORRECT.add_modifier(Modifier::REVERSED)
+                } else if idx < dead_at {
+                    CORRECT
+                } else {
+                    UNTYPED
+                };
+                let style = if (word_start..word_end).contains(&idx) {
+                    style.add_modifier(Modifier::UNDERLINED)
+                } else {
+                    style
+                };
+                match spans.last_mut() {
+                    Some(span) if span.style == style => span.content.to_mut().push(char),
+                    _ => spans.push(Span::styled(String::from(char), style)),
+                }
+            }
+            Line::from(spans)
+        })
+        .collect();
+
+    let words = thok.prompt_chars[..word_start]
+        .iter()
+        .filter(|&&c| c == ' ')
+        .count();
+    let [
+        _,
+        title_area,
+        _,
+        what_area,
+        _,
+        prompt_area,
+        _,
+        stats_area,
+        _,
+        legend_area,
+    ] = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(text.len() as u16),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .horizontal_margin(HORIZONTAL_MARGIN)
+    .vertical_margin(VERTICAL_MARGIN)
+    .areas(area);
+
+    let centered = Alignment::Center;
+    Paragraph::new(Span::styled("YOU DIED", INCORRECT))
+        .alignment(centered)
+        .render(title_area, buf);
+    Paragraph::new(Span::styled(
+        format!(
+            "expected {}, pressed {}",
+            show_key(expected),
+            show_key(pressed)
+        ),
+        BOLD,
+    ))
+    .alignment(centered)
+    .render(what_area, buf);
+    Paragraph::new(text).render(prompt_area, buf);
+    let word_count = if words == 1 { "word" } else { "words" };
+    Paragraph::new(Span::styled(
+        format!(
+            "{words} {word_count}, {dead_at} chars, {:.1}s",
+            thok.elapsed_secs
+        ),
+        UNTYPED,
+    ))
+    .alignment(centered)
+    .render(stats_area, buf);
+    Paragraph::new(Span::styled(
+        "(r)etry / (n)ew / (esc)ape",
+        Style::new().add_modifier(Modifier::ITALIC),
+    ))
+    .render(legend_area, buf);
+}
+
+/// A key as the death screen names it: a space would be invisible.
+fn show_key(c: char) -> String {
+    if c == ' ' {
+        "space".to_string()
+    } else {
+        format!("'{c}'")
+    }
 }
 
 #[cfg(test)]
@@ -949,5 +1078,40 @@ mod tests {
     fn results_screen_for_an_empty_prompt() {
         let thok = Thok::new(String::new(), 0, None);
         insta::assert_snapshot!(draw(&thok, 80, 24));
+    }
+
+    fn died_in_death_mode(typed: &str) -> Thok {
+        let mut thok = Thok::typed(PROMPT, typed, None, &[]);
+        thok.death_mode = true;
+        thok.elapsed_secs = 2.5;
+        thok
+    }
+
+    #[test]
+    fn death_screen_after_a_mistake_in_death_mode() {
+        insta::assert_snapshot!(draw(&died_in_death_mode("the quick brx"), 80, 24));
+    }
+
+    #[test]
+    fn death_screen_names_a_mistyped_space() {
+        let screen = screen_text(&buffer(&died_in_death_mode("the quick brown foxx"), 80, 24));
+        assert!(screen.contains("YOU DIED"));
+        assert!(screen.contains("expected space, pressed 'x'"));
+    }
+
+    #[test]
+    fn a_clean_death_mode_run_gets_the_normal_results_screen() {
+        let mut thok = Thok::typed(PROMPT, PROMPT, None, &[]);
+        thok.death_mode = true;
+        let screen = screen_text(&buffer(&thok, 80, 24));
+        assert!(!screen.contains("YOU DIED"));
+        assert!(screen.contains("wpm"));
+    }
+
+    #[test]
+    fn a_mistake_outside_death_mode_gets_the_normal_results_screen() {
+        let thok = Thok::typed(PROMPT, PROMPT.replacen('q', "x", 1).as_str(), None, &[]);
+        let screen = screen_text(&buffer(&thok, 80, 24));
+        assert!(!screen.contains("YOU DIED"));
     }
 }
