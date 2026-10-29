@@ -98,13 +98,14 @@ impl Thok {
         self.pace_caret_index_at(self.started_at?.elapsed().as_secs_f64())
     }
 
-    /// When the next tick is due. None unless a test with something to
-    /// animate (a countdown or a pace caret) is running.
-    pub fn next_tick(&self) -> Option<Instant> {
+    /// When the next tick is due after `now`. None unless a test with
+    /// something to animate (a countdown or a pace caret) is running, or the
+    /// retry keys of a test that ended are still locked out.
+    pub fn next_tick(&self, now: Instant) -> Option<Instant> {
         if self.has_finished() {
             // wake up once more to light the retry keys
             let live_at = self.ended_at? + END_LOCKOUT;
-            return (Instant::now() < live_at).then_some(live_at);
+            return (now < live_at).then_some(live_at);
         }
         let animated = self.number_of_secs.is_some() || self.pace_wpm.is_some();
         if !animated {
@@ -163,7 +164,12 @@ impl Thok {
         lines.len() < cursor_line + MAX_VISIBLE_LINES
     }
 
-    pub fn on_tick(&mut self) {
+    /// Moves the countdown on by a tick that fired at `now`. Returns true
+    /// when this tick ended the test; a tick after the end does nothing.
+    pub fn on_tick(&mut self, now: Instant) -> bool {
+        if self.has_finished() {
+            return false;
+        }
         self.ticks += 1;
         if let Some(number_of_secs) = self.number_of_secs {
             // derived from the tick count rather than subtracted tick by
@@ -171,6 +177,7 @@ impl Thok {
             let ticked_secs = (TICK * self.ticks).as_secs_f64();
             self.seconds_remaining = Some(number_of_secs - ticked_secs);
         }
+        self.end_if_finished(now)
     }
 
     pub fn char_count(&self) -> usize {
@@ -244,8 +251,10 @@ impl Thok {
         self.input.pop();
     }
 
-    pub fn write(&mut self, c: char) {
-        self.started_at.get_or_insert_with(Instant::now);
+    /// Types `c`. Returns true when this key ended the test.
+    pub fn write(&mut self, c: char) -> bool {
+        let timestamp = Instant::now();
+        self.started_at.get_or_insert(timestamp);
 
         let outcome = if c == self.get_expected_char(self.input.len()) {
             Outcome::Correct
@@ -256,18 +265,25 @@ impl Thok {
         self.input.push(Input {
             char: c,
             outcome,
-            timestamp: Instant::now(),
+            timestamp,
         });
         self.refill_if_needed();
+        self.end_if_finished(timestamp)
     }
 
-    /// Notes the moment the test ended; the first call counts.
-    pub fn mark_ended(&mut self) {
-        self.ended_at.get_or_insert_with(Instant::now);
+    /// Notes that the test ended at `now` if it has just finished or died.
+    /// Returns true only the first time.
+    fn end_if_finished(&mut self, now: Instant) -> bool {
+        if self.ended_at.is_some() || !self.has_finished() {
+            return false;
+        }
+        self.ended_at = Some(now);
+        true
     }
 
-    /// Whether the retry and new test keys work at `now`: always while the
-    /// test runs, and from `END_LOCKOUT` after it ended.
+    /// Whether the retry and new test keys may act at `now`: always while
+    /// the test runs, and from `END_LOCKOUT` after it ended. Front ends ask
+    /// before acting on them and drop the key when this is false.
     pub fn restart_keys_live_at(&self, now: Instant) -> bool {
         self.ended_at.is_none_or(|ended| now >= ended + END_LOCKOUT)
     }
@@ -362,9 +378,9 @@ mod tests {
         thok.write('a');
         assert!(!thok.has_finished());
         // each tick takes TICK (100ms = 0.1s) off the countdown
-        thok.on_tick();
-        thok.on_tick();
-        thok.on_tick();
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
         assert!(thok.has_finished());
     }
 
@@ -461,8 +477,8 @@ mod tests {
         thok.write('a');
         thok.write('b');
         assert!(!thok.has_finished(), "length must not end a timed test");
-        thok.on_tick();
-        thok.on_tick();
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
         assert!(thok.has_finished());
     }
 
@@ -580,7 +596,7 @@ mod tests {
     fn tick_without_timer_is_noop() {
         let mut thok = Thok::new("abc".to_string(), 1, None);
         assert_eq!(thok.number_of_secs, None);
-        thok.on_tick();
+        thok.on_tick(Instant::now());
         assert_eq!(thok.seconds_remaining, None);
         assert!(!thok.has_finished());
     }
@@ -596,30 +612,52 @@ mod tests {
     }
 
     #[test]
-    fn restart_keys_are_live_while_running_and_after_the_lockout() {
-        let mut thok = Thok::typed("ab", "ab", None, &[]);
+    fn a_test_notes_when_it_ends_by_finishing_or_dying() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        assert!(!thok.write('a'));
+        assert_eq!(thok.ended_at, None);
+        assert!(thok.write('b'), "the last key ends the test");
+        assert_eq!(thok.ended_at, Some(thok.input[1].timestamp));
+
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.death_mode = true;
+        assert!(thok.write('x'), "a mistake ends a death mode test");
+        assert_eq!(thok.ended_at, Some(thok.input[0].timestamp));
+    }
+
+    #[test]
+    fn a_timed_test_ends_at_the_tick_that_runs_out_the_clock() {
+        let mut thok = Thok::new("abc".to_string(), 1, Some(0.2));
+        thok.write('a');
         let now = Instant::now();
-        assert!(thok.restart_keys_live_at(now), "a test that has not ended");
-        thok.ended_at = Some(now);
-        assert!(!thok.restart_keys_live_at(now));
-        assert!(!thok.restart_keys_live_at(now + END_LOCKOUT - Duration::from_millis(1)));
-        assert!(thok.restart_keys_live_at(now + END_LOCKOUT));
+        assert!(!thok.on_tick(now));
+        assert!(thok.on_tick(now + TICK));
+        assert_eq!(thok.ended_at, Some(now + TICK));
+        assert!(!thok.on_tick(now + TICK * 2), "a tick after the end");
+        assert_eq!(thok.seconds_remaining, Some(0.0));
+        assert_eq!(thok.ended_at, Some(now + TICK));
     }
 
     #[test]
-    fn a_finished_test_wakes_once_when_the_lockout_ends() {
-        let mut thok = Thok::typed("ab", "ab", None, &[]);
-        assert_eq!(thok.next_tick(), None, "no end noted yet");
-        thok.mark_ended();
+    fn restart_keys_are_locked_out_just_after_a_test_ends() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.write('a');
+        assert!(thok.restart_keys_live_at(Instant::now()), "a running test");
+        thok.write('b');
         let ended = thok.ended_at.unwrap();
-        assert_eq!(thok.next_tick(), Some(ended + END_LOCKOUT));
+        assert!(!thok.restart_keys_live_at(ended));
+        assert!(!thok.restart_keys_live_at(ended + END_LOCKOUT - Duration::from_millis(1)));
+        assert!(thok.restart_keys_live_at(ended + END_LOCKOUT));
     }
 
     #[test]
-    fn a_finished_test_stops_waking_once_the_keys_are_live() {
-        let mut thok = Thok::typed("ab", "ab", None, &[]);
-        thok.ended_at = Instant::now().checked_sub(END_LOCKOUT);
-        assert!(thok.ended_at.is_some());
-        assert_eq!(thok.next_tick(), None);
+    fn a_finished_test_wakes_only_while_the_restart_keys_are_locked_out() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.write('a');
+        assert_eq!(thok.next_tick(Instant::now()), None, "nothing to animate");
+        thok.write('b');
+        let ended = thok.ended_at.unwrap();
+        assert_eq!(thok.next_tick(ended), Some(ended + END_LOCKOUT));
+        assert_eq!(thok.next_tick(ended + END_LOCKOUT), None);
     }
 }

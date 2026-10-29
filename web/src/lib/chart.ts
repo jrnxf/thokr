@@ -218,7 +218,7 @@ function bresenham(x1: number, y1: number, x2: number, y2: number, f: (x: number
 
 /** The stats line under the chart, as ui.rs prints it. */
 export const statsLine = (t: Pick<Results, "wpm" | "accuracy" | "stdDev">) => `${t.wpm} wpm   ${t.accuracy}% acc   ${t.stdDev.toFixed(2)} sd`;
-export const LEGEND = "(r)etry / (n)ew / (esc)ape";
+export const LEGEND = "(r)etry / (n)ew";
 
 /** The whole results screen (ui.rs render_results) in a cols x rows grid. */
 export function resultsGrid(thok: Pick<Results, "wpmCoords" | "wpm" | "accuracy" | "stdDev">, cols: number, rows: number): Grid {

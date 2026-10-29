@@ -67,11 +67,6 @@ impl App {
         let (prompt, word_count) = Self::generate_prompt(&self.cli);
         self.thok = Self::new_thok(&self.cli, prompt, word_count);
     }
-    fn save_if_finished(&mut self) {
-        if self.thok.has_finished() {
-            self.thok.calc_results();
-        }
-    }
 }
 
 thread_local! {
@@ -139,6 +134,12 @@ pub const KEY_RIGHT: u32 = 0x11_0003;
 pub extern "C" fn tk_key(key: u32) {
     with(|app| {
         let finished = app.thok.has_finished();
+        let restart_key =
+            matches!(key, KEY_LEFT | KEY_RIGHT) || matches!(char::from_u32(key), Some('r' | 'n'));
+        // a test that just ended ignores these, dropped rather than held
+        if restart_key && !app.thok.restart_keys_live_at(Instant::now()) {
+            return;
+        }
         match key {
             KEY_LEFT => app.restart(),
             KEY_RIGHT => app.new_test(),
@@ -146,8 +147,9 @@ pub extern "C" fn tk_key(key: u32) {
             _ => {
                 let Some(c) = char::from_u32(key) else { return };
                 if !finished {
-                    app.thok.write(c);
-                    app.save_if_finished();
+                    if app.thok.write(c) {
+                        app.thok.calc_results();
+                    }
                 } else if c == 'r' {
                     app.restart();
                 } else if c == 'n' {
@@ -161,17 +163,21 @@ pub extern "C" fn tk_key(key: u32) {
 /// Milliseconds until thokr's next tick is due, or -1 when none is.
 #[unsafe(no_mangle)]
 pub extern "C" fn tk_next_tick_ms() -> f64 {
-    with(|app| match app.thok.next_tick() {
-        Some(at) => at.saturating_duration_since(Instant::now()).as_secs_f64() * 1000.0,
-        None => -1.0,
+    with(|app| {
+        let now = Instant::now();
+        match app.thok.next_tick(now) {
+            Some(at) => at.saturating_duration_since(now).as_secs_f64() * 1000.0,
+            None => -1.0,
+        }
     })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn tk_tick() {
     with(|app| {
-        app.thok.on_tick();
-        app.save_if_finished();
+        if app.thok.on_tick(Instant::now()) {
+            app.thok.calc_results();
+        }
     })
 }
 
@@ -192,7 +198,7 @@ fn color(c: Color) -> String {
 pub extern "C" fn tk_render(w: u16, h: u16) -> usize {
     with(|app| {
         let mut terminal = Terminal::new(TestBackend::new(w.max(1), h.max(1))).unwrap();
-        terminal.draw(|f| ui::draw(f, &app.thok)).unwrap();
+        terminal.draw(|f| ui::draw(f, &app.thok, Instant::now())).unwrap();
         let typing = !app.thok.has_finished();
         let cursor = terminal.backend_mut().get_cursor_position().unwrap();
         let buf = terminal.backend().buffer();

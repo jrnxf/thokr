@@ -126,7 +126,7 @@ impl App {
     fn draw(&mut self, frame: &mut ratatui::Frame) {
         // a timed test streams words to fill the lines the screen shows
         self.thok.set_line_width(ui::line_width(frame.area()));
-        ui::draw(frame, &self.thok);
+        ui::draw(frame, &self.thok, Instant::now());
     }
 
     fn on_key(&mut self, key: KeyEvent) -> ControlFlow<()> {
@@ -138,13 +138,14 @@ impl App {
             }
             // a test that just ended ignores these, dropped rather than held
             KeyCode::Left | KeyCode::Right | KeyCode::Char('r' | 'n')
-                if finished && !self.thok.restart_keys_live_at(Instant::now()) => {}
+                if !self.thok.restart_keys_live_at(Instant::now()) => {}
             KeyCode::Left => self.restart(),
             KeyCode::Right => self.new_test(),
             KeyCode::Backspace if !finished => self.thok.backspace(),
             KeyCode::Char(c) if !finished => {
-                self.thok.write(c);
-                self.save_if_finished();
+                if self.thok.write(c) {
+                    self.save_results();
+                }
             }
             KeyCode::Char('r') => self.restart(),
             KeyCode::Char('n') => self.new_test(),
@@ -154,25 +155,19 @@ impl App {
     }
 
     fn on_tick(&mut self) {
-        // a tick after the end only lights the retry keys
-        if self.thok.has_finished() {
-            return;
+        if self.thok.on_tick(Instant::now()) {
+            self.save_results();
         }
-        self.thok.on_tick();
-        self.save_if_finished();
     }
 
-    /// Call after anything that can end the test: a key press or a tick.
-    fn save_if_finished(&mut self) {
-        if self.thok.has_finished() && self.thok.ended_at.is_none() {
-            self.thok.mark_ended();
-            self.thok.calc_results();
-            if self.thok.died() {
-                return;
-            }
-            if let Err(error) = history::append(&self.thok) {
-                self.save_error.get_or_insert(error);
-            }
+    /// Call once, when a key press or a tick has ended the test.
+    fn save_results(&mut self) {
+        self.thok.calc_results();
+        if self.thok.died() {
+            return;
+        }
+        if let Err(error) = history::append(&self.thok) {
+            self.save_error.get_or_insert(error);
         }
     }
 }
@@ -247,7 +242,7 @@ fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
     loop {
         terminal.draw(|frame| app.draw(frame))?;
 
-        match next_input(app.thok.next_tick())? {
+        match next_input(app.thok.next_tick(Instant::now()))? {
             Input::Key(key) => {
                 if app.on_key(key).is_break() {
                     return Ok(());

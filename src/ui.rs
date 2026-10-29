@@ -35,22 +35,22 @@ pub fn line_width(area: Rect) -> u16 {
     area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1)
 }
 
-/// Draws the test: the prompt while it is running, the results once it has
-/// finished.
-pub fn draw(frame: &mut Frame, thok: &Thok) {
+/// Draws the test as it is at `now`: the prompt while it is running, the
+/// results once it has finished.
+pub fn draw(frame: &mut Frame, thok: &Thok, now: Instant) {
     let area = frame.area();
-    if let Some(cursor) = render(thok, area, frame.buffer_mut()) {
+    if let Some(cursor) = render(thok, now, area, frame.buffer_mut()) {
         frame.set_cursor_position(cursor);
     }
 }
 
 /// Returns where the cursor belongs; the results screen has none.
-fn render(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
+fn render(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) -> Option<Position> {
     if thok.died() {
-        render_death(thok, area, buf);
+        render_death(thok, now, area, buf);
         None
     } else if thok.has_finished() {
-        render_results(thok, area, buf);
+        render_results(thok, now, area, buf);
         None
     } else {
         render_running(thok, area, buf)
@@ -396,7 +396,7 @@ impl Plot {
     }
 }
 
-fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
+fn render_results(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     let [chart_area, stats_area, _, legend_area] = Layout::vertical([
         Constraint::Min(1),
         Constraint::Length(1),
@@ -419,14 +419,14 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
         .alignment(Alignment::Center)
         .render(stats_area, buf);
 
-    render_legend(thok, legend_area, buf);
+    render_legend(thok, now, legend_area, buf);
 }
 
 /// The key hints of an end screen. They are dimmed while the retry keys are
-/// still locked out (see `END_LOCKOUT`).
-fn render_legend(thok: &Thok, area: Rect, buf: &mut Buffer) {
+/// still locked out at `now` (see `END_LOCKOUT`).
+fn render_legend(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     let mut style = Style::new().add_modifier(Modifier::ITALIC);
-    if !thok.restart_keys_live_at(Instant::now()) {
+    if !thok.restart_keys_live_at(now) {
         style = style.add_modifier(Modifier::DIM);
     }
     Paragraph::new(Span::styled("(r)etry / (n)ew", style)).render(area, buf);
@@ -435,7 +435,7 @@ fn render_legend(thok: &Thok, area: Rect, buf: &mut Buffer) {
 /// The screen after a death-mode run ends on a mistake: the prompt exactly
 /// where it was on the test screen, the skull above it and how far the run
 /// got below.
-fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
+fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     // the run ends on its first mistake, so that is the last key
     let dead_at = thok.input.len().saturating_sub(1);
 
@@ -525,7 +525,7 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     ))
     .alignment(centered)
     .render(stats_area, buf);
-    render_legend(thok, legend_area, buf);
+    render_legend(thok, now, legend_area, buf);
 }
 
 #[cfg(test)]
@@ -544,7 +544,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|f| {
-                render(thok, f.area(), f.buffer_mut())
+                render(thok, Instant::now(), f.area(), f.buffer_mut())
                     .map(drop)
                     .unwrap_or_default()
             })
@@ -588,7 +588,7 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         let mut cursor = None;
         terminal
-            .draw(|f| cursor = render(thok, f.area(), f.buffer_mut()))
+            .draw(|f| cursor = render(thok, Instant::now(), f.area(), f.buffer_mut()))
             .unwrap();
 
         let buffer = terminal.backend().buffer();
@@ -694,7 +694,7 @@ mod tests {
     fn timed_test_shows_the_countdown() {
         let mut thok = Thok::typed(PROMPT, "the qu", Some(30.0), &[]);
         for _ in 0..17 {
-            thok.on_tick();
+            thok.on_tick(Instant::now());
         }
         assert!(screen_text(&buffer(&thok, 80, 24)).contains("28.3"));
     }
@@ -1076,7 +1076,7 @@ mod tests {
             ],
         );
         for _ in 0..3 {
-            thok.on_tick();
+            thok.on_tick(Instant::now());
         }
         assert!(thok.has_finished());
         thok.calc_results();
