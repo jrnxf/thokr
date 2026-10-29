@@ -1,4 +1,7 @@
+use crate::layout;
+use crate::ui::MAX_VISIBLE_LINES;
 use crate::util::std_dev;
+use rand::seq::SliceRandom;
 use std::time::{Duration, Instant};
 
 /// How often the countdown and the pace caret move while a test is running.
@@ -16,6 +19,13 @@ pub struct Input {
     pub outcome: Outcome,
     pub timestamp: Instant,
 }
+
+/// How many fresh words to append at a time when the prompt runs short.
+const REFILL_WORD_COUNT: usize = 10;
+
+/// Chars per line before the screen has reported its width: an 80 column
+/// terminal less its margins.
+const DEFAULT_LINE_WIDTH: u16 = 70;
 
 /// represents a test being displayed to the user
 #[derive(Debug)]
@@ -35,6 +45,12 @@ pub struct Thok {
     pub pace_wpm: Option<f64>,
     /// End the test the instant an incorrect character is typed.
     pub death_mode: bool,
+    /// Word pool for continuous (timed) mode. When non-empty, the prompt is
+    /// topped up as the cursor advances and the test ends only on the timer,
+    /// never by reaching the end of the words.
+    pub refill_words: Vec<String>,
+    /// How many chars fit on a line of the screen, to size the refill by.
+    line_width: u16,
     ticks: u32,
 }
 
@@ -57,6 +73,8 @@ impl Thok {
             pace_wpm: None,
             ticks: 0,
             death_mode: false,
+            refill_words: vec![],
+            line_width: DEFAULT_LINE_WIDTH,
         }
     }
 
@@ -81,6 +99,56 @@ impl Thok {
             return None;
         }
         Some(self.started_at? + TICK * (self.ticks + 1))
+    }
+
+    /// True when this test streams new words to fill a time limit rather than
+    /// ending at a fixed prompt length.
+    pub fn is_continuous(&self) -> bool {
+        !self.refill_words.is_empty()
+    }
+
+    /// Tells the test how wide the screen's lines are, and tops the prompt up
+    /// for that width.
+    pub fn set_line_width(&mut self, line_width: u16) {
+        if self.line_width != line_width {
+            self.line_width = line_width;
+            self.refill_if_needed();
+        }
+    }
+
+    /// In continuous mode, append fresh words until the prompt wraps to at
+    /// least a full window of lines below the cursor's line, so the view
+    /// always shows the same number of lines and never grows mid-test. No-op
+    /// otherwise.
+    pub fn refill_if_needed(&mut self) {
+        if self.refill_words.is_empty() {
+            return;
+        }
+
+        while self.lines_short() {
+            let rng = &mut rand::thread_rng();
+            let mut appended = String::new();
+            for _ in 0..REFILL_WORD_COUNT {
+                if let Some(word) = self.refill_words.choose(rng) {
+                    // words are space-separated, but the prompt must not
+                    // start with a space
+                    if !self.prompt_chars.is_empty() || !appended.is_empty() {
+                        appended.push(' ');
+                    }
+                    appended.push_str(word);
+                }
+            }
+            self.prompt.push_str(&appended);
+            self.prompt_chars.extend(appended.chars());
+        }
+    }
+
+    /// True when fewer lines than the window shows follow the cursor's line.
+    fn lines_short(&self) -> bool {
+        let lines = layout::wrap_chars(&self.prompt_chars, self.line_width);
+        let cursor_line = layout::char_cell(&lines, self.input.len())
+            .map_or(lines.len().saturating_sub(1), |(line_no, _)| line_no);
+        lines.len() < cursor_line + MAX_VISIBLE_LINES
     }
 
     pub fn on_tick(&mut self) {
@@ -178,12 +246,19 @@ impl Thok {
             outcome,
             timestamp: Instant::now(),
         });
+        self.refill_if_needed();
     }
 
     pub fn has_finished(&self) -> bool {
-        self.died()
-            || self.input.len() == self.char_count()
-            || self.seconds_remaining.is_some_and(|secs| secs <= 0.0)
+        if self.died() {
+            return true;
+        }
+        let timer_expired = self.seconds_remaining.is_some_and(|secs| secs <= 0.0);
+        if self.is_continuous() {
+            // words stream forever; only the clock ends a continuous test
+            return timer_expired;
+        }
+        self.input.len() == self.char_count() || timer_expired
     }
 
     /// Death mode ends the test on the first mistake, ahead of the usual
@@ -308,6 +383,89 @@ mod tests {
         thok.death_mode = true;
         thok.write('x');
         assert!(thok.has_finished());
+    }
+
+    /// How many lines the prompt wraps to at `width` chars a line.
+    fn wrapped_lines(thok: &Thok, width: u16) -> usize {
+        layout::wrap_chars(&thok.prompt_chars, width).len()
+    }
+
+    #[test]
+    fn continuous_mode_keeps_a_full_window_of_lines_across_writes() {
+        for width in [20, 40, 70, 150] {
+            for prompt in ["", "a b", "word word word word word word word word"] {
+                let mut thok = Thok::new(prompt.to_string(), 2, Some(30.0));
+                thok.refill_words = vec!["word".to_string(), "longerword".to_string()];
+                thok.set_line_width(width);
+                thok.refill_if_needed();
+
+                // the lines the screen shows: the window is a fixed size
+                // as long as the prompt wraps to at least that many
+                assert!(wrapped_lines(&thok, width) >= MAX_VISIBLE_LINES, "{width}");
+                for _ in 0..300 {
+                    thok.write('x');
+                    let lines = wrapped_lines(&thok, width);
+                    let cursor_line = layout::char_cell(
+                        &layout::wrap_chars(&thok.prompt_chars, width),
+                        thok.input.len(),
+                    )
+                    .unwrap()
+                    .0;
+                    assert!(
+                        lines >= cursor_line + MAX_VISIBLE_LINES,
+                        "window shrinks at width {width} after {} keys",
+                        thok.input.len()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn continuous_mode_refills_when_the_screen_gets_narrower() {
+        let mut thok = Thok::new(String::new(), 0, Some(30.0));
+        thok.refill_words = vec!["word".to_string()];
+        thok.set_line_width(200);
+        thok.refill_if_needed();
+        thok.set_line_width(20);
+        assert!(wrapped_lines(&thok, 20) >= MAX_VISIBLE_LINES);
+    }
+
+    #[test]
+    fn continuous_mode_finishes_only_on_the_timer() {
+        let mut thok = Thok::new("ab".to_string(), 1, Some(0.2));
+        thok.refill_words = vec!["word".to_string()];
+        thok.write('a');
+        thok.write('b');
+        assert!(!thok.has_finished(), "length must not end a timed test");
+        thok.on_tick();
+        thok.on_tick();
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn continuous_mode_starts_an_empty_prompt_without_a_space() {
+        let mut thok = Thok::new(String::new(), 0, Some(5.0));
+        thok.refill_words = vec!["word".to_string()];
+        thok.refill_if_needed();
+        assert!(thok.char_count() > 0);
+        assert!(!thok.prompt.starts_with(' '));
+        // the first key must not index past the end of an empty prompt
+        thok.write('w');
+        assert_eq!(thok.input[0].outcome, Outcome::Correct);
+    }
+
+    #[test]
+    fn death_mode_ends_a_continuous_test_on_a_mistake() {
+        let mut thok = Thok::new("hello".to_string(), 1, Some(10.0));
+        thok.refill_words = vec!["word".to_string()];
+        thok.death_mode = true;
+        thok.refill_if_needed();
+        thok.write('h');
+        assert!(!thok.has_finished());
+        thok.write('x');
+        assert!(thok.has_finished(), "a mistake still ends a -d -s run");
+        assert!(thok.died());
     }
 
     #[test]

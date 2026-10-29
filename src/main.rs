@@ -32,7 +32,7 @@ use std::{
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// number of words to use in test
+    /// number of words to use in test (initial buffer only when timed)
     #[arg(short = 'w', long, default_value_t = 15)]
     number_of_words: usize,
 
@@ -40,7 +40,8 @@ struct Cli {
     #[arg(short = 'f', long = "full-sentences")]
     number_of_sentences: Option<usize>,
 
-    /// number of seconds to run test
+    /// run a timed test for this many seconds; words stream continuously until
+    /// the clock stops (unless -p or -f fixes the text)
     #[arg(short = 's', long)]
     number_of_secs: Option<usize>,
 
@@ -90,11 +91,23 @@ impl App {
         }
     }
 
+    /// A timed test on the default words streams fresh ones until the clock
+    /// stops. A custom prompt or sentences are fixed text, so they end at
+    /// their own length.
+    fn is_continuous(cli: &Cli) -> bool {
+        cli.number_of_secs.is_some() && cli.prompt.is_none() && cli.number_of_sentences.is_none()
+    }
+
     fn new_thok(cli: &Cli, prompt: String, word_count: usize) -> Thok {
         let number_of_secs = cli.number_of_secs.map(|secs| secs as f64);
         let mut thok = Thok::new(prompt, word_count, number_of_secs);
         thok.pace_wpm = cli.pace.map(f64::from);
         thok.death_mode = cli.death_mode;
+        if Self::is_continuous(cli) {
+            thok.refill_words = cli.supported_language.word_pool();
+            // so the prompt has its full length from the first frame
+            thok.refill_if_needed();
+        }
         thok
     }
 
@@ -110,7 +123,9 @@ impl App {
         self.thok = Self::new_thok(&self.cli, prompt, word_count);
     }
 
-    fn draw(&self, frame: &mut ratatui::Frame) {
+    fn draw(&mut self, frame: &mut ratatui::Frame) {
+        // a timed test streams words to fill the lines the screen shows
+        self.thok.set_line_width(ui::line_width(frame.area()));
         ui::draw(frame, &self.thok);
     }
 

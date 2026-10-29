@@ -17,15 +17,23 @@ use std::ops::Range;
 const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
 
-/// Most prompt lines the death screen shows, around the line it ended on, and
-/// how many of them come before it.
-const DEATH_VISIBLE_LINES: usize = 3;
-const DEATH_LEAD: usize = 1;
+/// Most prompt lines shown at once. A continuous (timed) test grows the
+/// prompt without bound, so the view scrolls a window of this many lines
+/// instead of growing to fit.
+pub const MAX_VISIBLE_LINES: usize = 3;
+
+/// Once scrolling, the completed lines kept above the cursor line.
+const WINDOW_LEAD: usize = 1;
 
 const BOLD: Style = Style::new().add_modifier(Modifier::BOLD);
 const CORRECT: Style = BOLD.fg(Color::Green);
 const INCORRECT: Style = BOLD.fg(Color::Red);
 const UNTYPED: Style = BOLD.add_modifier(Modifier::DIM);
+
+/// How many chars of the prompt fit on a line of a screen `area` wide.
+pub fn line_width(area: Rect) -> u16 {
+    area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1)
+}
 
 /// Draws the test: the prompt while it is running, the results once it has
 /// finished.
@@ -51,8 +59,16 @@ fn render(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
 
 fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position> {
     // the wrapped lines place both the text and the cursor (1:1 char to cell)
-    let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
-    let lines = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
+    let max_chars_per_line = line_width(area);
+    let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
+    // the window of lines around the cursor; a prompt that fits shows whole
+    let cursor_line = layout::char_cell(&wrapped, thok.input.len())
+        .map_or(wrapped.len().saturating_sub(1), |(line_no, _)| line_no);
+    let shown = wrapped.len().min(MAX_VISIBLE_LINES);
+    let first = cursor_line
+        .saturating_sub(WINDOW_LEAD)
+        .min(wrapped.len() - shown);
+    let lines = &wrapped[first..first + shown];
     let prompt_lines = lines.len() as u16;
     let timer_lines = if thok.number_of_secs.is_some() { 2 } else { 0 };
     let padding = area.height.saturating_sub(prompt_lines) / 2;
@@ -94,7 +110,7 @@ fn render_running(thok: &Thok, area: Rect, buf: &mut Buffer) -> Option<Position>
             .render(timer_area, buf);
     }
 
-    let (line_no, col) = layout::char_cell(&lines, thok.input.len())?;
+    let (line_no, col) = layout::char_cell(lines, thok.input.len())?;
     Some(Position::new(x + col, prompt_area.y + line_no as u16))
 }
 
@@ -390,12 +406,12 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     let expected = thok.prompt_chars[dead_at];
     let pressed = thok.input[dead_at].char;
 
-    let max_chars_per_line = area.width.saturating_sub(HORIZONTAL_MARGIN * 2).max(1);
+    let max_chars_per_line = line_width(area);
     let wrapped = layout::wrap_chars(&thok.prompt_chars, max_chars_per_line);
     let death_line = layout::char_cell(&wrapped, dead_at).map_or(0, |(line_no, _)| line_no);
-    let shown = wrapped.len().min(DEATH_VISIBLE_LINES);
+    let shown = wrapped.len().min(MAX_VISIBLE_LINES);
     let first = death_line
-        .saturating_sub(DEATH_LEAD)
+        .saturating_sub(WINDOW_LEAD)
         .min(wrapped.len() - shown);
     let lines = &wrapped[first..first + shown];
 
@@ -1095,5 +1111,33 @@ mod tests {
         let thok = Thok::typed(PROMPT, PROMPT.replacen('q', "x", 1).as_str(), None, &[]);
         let screen = screen_text(&buffer(&thok, 80, 24));
         assert!(!screen.contains("\u{1F480}"));
+    }
+
+    #[test]
+    fn a_timed_test_shows_the_same_number_of_lines_while_typing() {
+        for (width, words) in [(80, 0), (80, 3), (80, 15), (30, 3), (200, 3)] {
+            let mut thok = Thok::new(String::new(), words, Some(10.0));
+            thok.refill_words = vec!["word".to_string(), "another".to_string()];
+            let area = Rect::new(0, 0, width, 24);
+            thok.set_line_width(line_width(area));
+            thok.refill_if_needed();
+
+            let prompt_rows = |thok: &Thok| {
+                let buf = buffer(thok, width, 24);
+                (0..24)
+                    .filter(|&y| row_text(&buf, y).chars().any(char::is_alphabetic))
+                    .count()
+            };
+            let at_the_start = prompt_rows(&thok);
+            assert_eq!(
+                at_the_start, MAX_VISIBLE_LINES,
+                "{width} wide, {words} words"
+            );
+            for _ in 0..200 {
+                let expected = thok.get_expected_char(thok.input.len());
+                thok.write(expected);
+                assert_eq!(prompt_rows(&thok), at_the_start, "{width} wide");
+            }
+        }
     }
 }

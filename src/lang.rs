@@ -29,6 +29,11 @@ impl Language {
             .collect();
         picked.join(" ")
     }
+
+    /// Every word of the list, for continuous (timed) mode to draw from.
+    pub fn word_pool(self) -> Vec<String> {
+        self.words().lines().map(str::to_string).collect()
+    }
 }
 
 /// `count` random sentences joined by spaces, and how many words they hold.
