@@ -503,7 +503,7 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
         height: 1,
         ..view.prompt_area
     }
-    .intersection(area);
+    .intersection(content_area);
 
     let centered = Alignment::Center;
     Paragraph::new(Span::styled("\u{1F480}", INCORRECT))
@@ -1142,9 +1142,8 @@ mod tests {
             (PROMPT, "the quick brx", Some(30.0), 100, 40),
         ];
         for (prompt, typed, secs, width, height) in cases {
-            let (fatal, before) = typed.split_at(typed.len() - 1);
-            let _ = before;
-            let mut last_test = Thok::typed(prompt, fatal, secs, &[]);
+            let before = &typed[..typed.len() - 1];
+            let mut last_test = Thok::typed(prompt, before, secs, &[]);
             last_test.death_mode = true;
             assert!(!last_test.died());
             let mut dead = Thok::typed(prompt, typed, secs, &[]);
@@ -1167,11 +1166,29 @@ mod tests {
             for ((ry, rtext), (dy, dtext)) in running.iter().zip(rows) {
                 assert_eq!(ry, dy, "{typed:?} at {width}x{height}");
                 assert_eq!(
-                    rtext.replace('\u{1F480}', " ").trim_end(),
+                    rtext.trim_end(),
                     dtext.trim_end(),
                     "{typed:?} at {width}x{height}: row {ry} changed"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_death_stats_line_never_lands_on_the_key_hints() {
+        for (typed, secs, height) in [
+            ("it was the bx", None, 11),
+            ("it was the bx", Some(30.0), 14),
+        ] {
+            let mut dead = Thok::typed(LONG_PROMPT, typed, secs, &[]);
+            dead.death_mode = true;
+            let buf = buffer(&dead, 80, height);
+            let legend = row_text(&buf, height - VERTICAL_MARGIN - 1);
+            assert_eq!(
+                legend.trim(),
+                "(r)etry / (n)ew / (esc)ape",
+                "{typed:?} at 80x{height}"
+            );
         }
     }
 
