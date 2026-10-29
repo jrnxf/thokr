@@ -440,13 +440,11 @@ const FATAL: Style = INCORRECT.add_modifier(Modifier::REVERSED);
 const FORGONE: Style = BOLD.fg(Color::DarkGray).add_modifier(Modifier::DIM);
 
 /// The screen after a death-mode run ends on a mistake: the prompt exactly
-/// where it was on the test screen, and how far the run got below. For a
-/// moment after the death the typed text flashes red; then it settles, with
-/// the fatal char a red block, the rest dimmed away and the stats in red.
+/// where it was on the test screen, and how far the run got below: the
+/// fatal char a red block, the rest dimmed away and the stats in red.
 fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     // the run ends on its first mistake, so that is the last key
     let dead_at = thok.input.len().saturating_sub(1);
-    let flashing = thok.death_flashing_at(now);
 
     // the cursor was on the fatal char the moment before the key, so the
     // window of lines is the one the test screen last showed
@@ -459,12 +457,10 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
             let mut spans: Vec<Span> = Vec::new();
             for idx in line.clone() {
                 let char = thok.prompt_chars[idx];
-                let style = match (idx.cmp(&dead_at), flashing) {
-                    (_, true) if idx <= dead_at => INCORRECT,
-                    (std::cmp::Ordering::Less, false) => BOLD,
-                    (std::cmp::Ordering::Equal, false) => FATAL,
-                    (_, true) => UNTYPED,
-                    (_, false) => FORGONE,
+                let style = match idx.cmp(&dead_at) {
+                    std::cmp::Ordering::Less => BOLD,
+                    std::cmp::Ordering::Equal => FATAL,
+                    std::cmp::Ordering::Greater => FORGONE,
                 };
                 match spans.last_mut() {
                     Some(span) if span.style == style => span.content.to_mut().push(char),
@@ -497,13 +493,12 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     .intersection(content_area);
 
     let word_count = if words == 1 { "word" } else { "words" };
-    let stats_style = if flashing { UNTYPED } else { INCORRECT };
     Paragraph::new(Span::styled(
         format!(
             "{words} {word_count}, {dead_at} chars, {:.1}s",
             thok.elapsed_secs
         ),
-        stats_style,
+        INCORRECT,
     ))
     .alignment(Alignment::Center)
     .render(stats_area, buf);
@@ -513,7 +508,7 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thok::{DEATH_FLASH, END_LOCKOUT, Input};
+    use crate::thok::{END_LOCKOUT, Input};
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
     use std::time::Duration;
@@ -1097,13 +1092,10 @@ mod tests {
         assert!(!screen.contains("died"));
     }
 
-    /// The death screen of "the quick brx" at 80x24 `since_death` after the
-    /// death: the buffer, and the cell of the prompt's char `idx`.
-    fn death_cells(since_death: Duration) -> (Buffer, impl Fn(usize) -> (u16, u16)) {
-        let mut thok = died_in_death_mode("the quick brx");
-        let ended_at = Instant::now();
-        thok.ended_at = Some(ended_at);
-        let buf = buffer_at(&thok, ended_at + since_death, 80, 24);
+    /// The death screen of "the quick brx" at 80x24: the buffer, and the
+    /// cell of the prompt's char `idx`.
+    fn death_cells() -> (Buffer, impl Fn(usize) -> (u16, u16)) {
+        let buf = buffer(&died_in_death_mode("the quick brx"), 80, 24);
         let (y, row) = (0..24)
             .map(|y| (y, row_text(&buf, y)))
             .find(|(_, row)| row.contains("the quick"))
@@ -1113,20 +1105,8 @@ mod tests {
     }
 
     #[test]
-    fn a_death_flashes_the_typed_text_red() {
-        let (buf, cell) = death_cells(Duration::ZERO);
-        for idx in [0, 5, 11, 12] {
-            let cell = &buf[cell(idx)];
-            assert_eq!(cell.fg, Color::Red, "char {idx}");
-            assert_eq!(cell.bg, Color::Reset, "char {idx}");
-        }
-        assert!(buf[cell(13)].modifier.contains(Modifier::DIM));
-        assert_ne!(buf[cell(13)].fg, Color::Red);
-    }
-
-    #[test]
-    fn a_death_settles_into_a_red_block_with_the_rest_dimmed_away() {
-        let (buf, cell) = death_cells(DEATH_FLASH);
+    fn a_death_shows_a_red_block_with_the_rest_dimmed_away() {
+        let (buf, cell) = death_cells();
         for idx in [0, 5, 11] {
             let cell = &buf[cell(idx)];
             assert_eq!(cell.fg, Color::Reset, "char {idx} is back to normal");
