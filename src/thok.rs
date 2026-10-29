@@ -103,7 +103,8 @@ impl Thok {
     pub fn next_tick(&self) -> Option<Instant> {
         if self.has_finished() {
             // wake up once more to light the retry keys
-            return self.ended_at.map(|ended| ended + END_LOCKOUT);
+            let live_at = self.ended_at? + END_LOCKOUT;
+            return (Instant::now() < live_at).then_some(live_at);
         }
         let animated = self.number_of_secs.is_some() || self.pace_wpm.is_some();
         if !animated {
@@ -612,5 +613,13 @@ mod tests {
         thok.mark_ended();
         let ended = thok.ended_at.unwrap();
         assert_eq!(thok.next_tick(), Some(ended + END_LOCKOUT));
+    }
+
+    #[test]
+    fn a_finished_test_stops_waking_once_the_keys_are_live() {
+        let mut thok = Thok::typed("ab", "ab", None, &[]);
+        thok.ended_at = Instant::now().checked_sub(END_LOCKOUT);
+        assert!(thok.ended_at.is_some());
+        assert_eq!(thok.next_tick(), None);
     }
 }
