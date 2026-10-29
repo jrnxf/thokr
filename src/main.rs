@@ -55,6 +55,10 @@ struct Cli {
     /// ghost caret pacing at this WPM to race against
     #[arg(long)]
     pace: Option<u16>,
+
+    /// end the test the moment you mistype a character
+    #[arg(short = 'd', long = "death-mode")]
+    death_mode: bool,
 }
 
 struct App {
@@ -90,6 +94,7 @@ impl App {
         let number_of_secs = cli.number_of_secs.map(|secs| secs as f64);
         let mut thok = Thok::new(prompt, word_count, number_of_secs);
         thok.pace_wpm = cli.pace.map(f64::from);
+        thok.death_mode = cli.death_mode;
         thok
     }
 
@@ -139,6 +144,9 @@ impl App {
     fn save_if_finished(&mut self) {
         if self.thok.has_finished() {
             self.thok.calc_results();
+            if self.thok.died() {
+                return;
+            }
             if let Err(error) = history::append(&self.thok) {
                 self.save_error.get_or_insert(error);
             }

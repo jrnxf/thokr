@@ -33,6 +33,8 @@ pub struct Thok {
     pub accuracy: f64,
     pub std_dev: f64,
     pub pace_wpm: Option<f64>,
+    /// End the test the instant an incorrect character is typed.
+    pub death_mode: bool,
     ticks: u32,
 }
 
@@ -54,6 +56,7 @@ impl Thok {
             std_dev: 0.0,
             pace_wpm: None,
             ticks: 0,
+            death_mode: false,
         }
     }
 
@@ -178,8 +181,15 @@ impl Thok {
     }
 
     pub fn has_finished(&self) -> bool {
-        self.input.len() == self.char_count()
+        self.died()
+            || self.input.len() == self.char_count()
             || self.seconds_remaining.is_some_and(|secs| secs <= 0.0)
+    }
+
+    /// Death mode ends the test on the first mistake, ahead of the usual
+    /// length and timer rules. A run that ends this way is not a result.
+    pub fn died(&self) -> bool {
+        self.death_mode && self.input.iter().any(|i| i.outcome == Outcome::Incorrect)
     }
 }
 
@@ -257,6 +267,46 @@ mod tests {
         thok.on_tick();
         thok.on_tick();
         thok.on_tick();
+        assert!(thok.has_finished());
+    }
+
+    #[test]
+    fn death_mode_finishes_on_first_mistake() {
+        let mut thok = Thok::new("hello world".to_string(), 2, None);
+        thok.death_mode = true;
+        thok.write('h');
+        thok.write('e');
+        assert!(!thok.has_finished(), "correct typing keeps the test alive");
+        thok.write('x'); // expected 'l'
+        assert!(thok.has_finished(), "a mistake ends a death-mode test");
+    }
+
+    #[test]
+    fn died_only_after_a_mistake_in_death_mode() {
+        let mut thok = Thok::new("hello".to_string(), 1, None);
+        thok.death_mode = true;
+        thok.write('h');
+        assert!(!thok.died());
+        thok.write('x');
+        assert!(thok.died());
+
+        let mut off = Thok::new("hello".to_string(), 1, None);
+        off.write('x');
+        assert!(!off.died(), "a mistake only kills a death-mode test");
+    }
+
+    #[test]
+    fn death_mode_off_tolerates_mistakes() {
+        let mut thok = Thok::new("hello".to_string(), 1, None);
+        thok.write('x');
+        assert!(!thok.has_finished());
+    }
+
+    #[test]
+    fn death_mode_beats_a_running_timer() {
+        let mut thok = Thok::new("hello".to_string(), 1, Some(10.0));
+        thok.death_mode = true;
+        thok.write('x');
         assert!(thok.has_finished());
     }
 
