@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 /// How often the countdown and the pace caret move while a test is running.
 pub const TICK: Duration = Duration::from_millis(100);
 
+/// After a test ends, retry and new test keys are ignored for this long, so a
+/// key held down or typed ahead of the end cannot skip the end screen.
+pub const END_LOCKOUT: Duration = Duration::from_millis(500);
+
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
     Correct,
@@ -43,6 +47,8 @@ pub struct Thok {
     pub accuracy: f64,
     pub std_dev: f64,
     pub pace_wpm: Option<f64>,
+    /// When the test ended, naturally or by dying; set once.
+    pub ended_at: Option<Instant>,
     /// End the test the instant an incorrect character is typed.
     pub death_mode: bool,
     /// Word pool for continuous (timed) mode. When non-empty, the prompt is
@@ -71,6 +77,7 @@ impl Thok {
             accuracy: 0.0,
             std_dev: 0.0,
             pace_wpm: None,
+            ended_at: None,
             ticks: 0,
             death_mode: false,
             refill_words: vec![],
@@ -91,11 +98,17 @@ impl Thok {
         self.pace_caret_index_at(self.started_at?.elapsed().as_secs_f64())
     }
 
-    /// When the next tick is due. None unless a test with something to
-    /// animate (a countdown or a pace caret) is running.
-    pub fn next_tick(&self) -> Option<Instant> {
+    /// When the next tick is due after `now`. None unless a test with
+    /// something to animate (a countdown or a pace caret) is running, or the
+    /// retry keys of a test that ended are still locked out.
+    pub fn next_tick(&self, now: Instant) -> Option<Instant> {
+        if self.has_finished() {
+            // wake up once more to light the retry keys
+            let live_at = self.ended_at? + END_LOCKOUT;
+            return (now < live_at).then_some(live_at);
+        }
         let animated = self.number_of_secs.is_some() || self.pace_wpm.is_some();
-        if !animated || self.has_finished() {
+        if !animated {
             return None;
         }
         Some(self.started_at? + TICK * (self.ticks + 1))
@@ -151,7 +164,12 @@ impl Thok {
         lines.len() < cursor_line + MAX_VISIBLE_LINES
     }
 
-    pub fn on_tick(&mut self) {
+    /// Moves the countdown on by a tick that fired at `now`. Returns true
+    /// when this tick ended the test; a tick after the end does nothing.
+    pub fn on_tick(&mut self, now: Instant) -> bool {
+        if self.has_finished() {
+            return false;
+        }
         self.ticks += 1;
         if let Some(number_of_secs) = self.number_of_secs {
             // derived from the tick count rather than subtracted tick by
@@ -159,6 +177,7 @@ impl Thok {
             let ticked_secs = (TICK * self.ticks).as_secs_f64();
             self.seconds_remaining = Some(number_of_secs - ticked_secs);
         }
+        self.end_if_finished(now)
     }
 
     pub fn char_count(&self) -> usize {
@@ -232,8 +251,10 @@ impl Thok {
         self.input.pop();
     }
 
-    pub fn write(&mut self, c: char) {
-        self.started_at.get_or_insert_with(Instant::now);
+    /// Types `c`, pressed at `now`. Returns true when this key ended the
+    /// test.
+    pub fn write(&mut self, c: char, now: Instant) -> bool {
+        self.started_at.get_or_insert(now);
 
         let outcome = if c == self.get_expected_char(self.input.len()) {
             Outcome::Correct
@@ -244,9 +265,27 @@ impl Thok {
         self.input.push(Input {
             char: c,
             outcome,
-            timestamp: Instant::now(),
+            timestamp: now,
         });
         self.refill_if_needed();
+        self.end_if_finished(now)
+    }
+
+    /// Notes that the test ended at `now` if it has just finished or died.
+    /// Returns true only the first time.
+    fn end_if_finished(&mut self, now: Instant) -> bool {
+        if self.ended_at.is_some() || !self.has_finished() {
+            return false;
+        }
+        self.ended_at = Some(now);
+        true
+    }
+
+    /// Whether the retry and new test keys may act at `now`: always while
+    /// the test runs, and from `END_LOCKOUT` after it ended. Front ends ask
+    /// before acting on them and drop the key when this is false.
+    pub fn restart_keys_live_at(&self, now: Instant) -> bool {
+        self.ended_at.is_none_or(|ended| now >= ended + END_LOCKOUT)
     }
 
     pub fn has_finished(&self) -> bool {
@@ -302,8 +341,8 @@ mod tests {
     #[test]
     fn write_records_correct_and_incorrect() {
         let mut thok = Thok::new("hi".to_string(), 1, None);
-        thok.write('h');
-        thok.write('x');
+        thok.write('h', Instant::now());
+        thok.write('x', Instant::now());
         assert_eq!(thok.input[0].outcome, Outcome::Correct);
         assert_eq!(thok.input[1].outcome, Outcome::Incorrect);
         assert_eq!(thok.input.len(), 2);
@@ -313,8 +352,8 @@ mod tests {
     #[test]
     fn backspace_removes_last_input() {
         let mut thok = Thok::new("hi".to_string(), 1, None);
-        thok.write('h');
-        thok.write('x');
+        thok.write('h', Instant::now());
+        thok.write('x', Instant::now());
         thok.backspace();
         assert_eq!(thok.input.len(), 1);
 
@@ -327,21 +366,21 @@ mod tests {
     #[test]
     fn has_finished_by_length() {
         let mut thok = Thok::new("ab".to_string(), 1, None);
-        thok.write('a');
+        thok.write('a', Instant::now());
         assert!(!thok.has_finished());
-        thok.write('b');
+        thok.write('b', Instant::now());
         assert!(thok.has_finished());
     }
 
     #[test]
     fn has_finished_by_timer() {
         let mut thok = Thok::new("abc".to_string(), 1, Some(0.3));
-        thok.write('a');
+        thok.write('a', Instant::now());
         assert!(!thok.has_finished());
         // each tick takes TICK (100ms = 0.1s) off the countdown
-        thok.on_tick();
-        thok.on_tick();
-        thok.on_tick();
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
         assert!(thok.has_finished());
     }
 
@@ -349,10 +388,10 @@ mod tests {
     fn death_mode_finishes_on_first_mistake() {
         let mut thok = Thok::new("hello world".to_string(), 2, None);
         thok.death_mode = true;
-        thok.write('h');
-        thok.write('e');
+        thok.write('h', Instant::now());
+        thok.write('e', Instant::now());
         assert!(!thok.has_finished(), "correct typing keeps the test alive");
-        thok.write('x'); // expected 'l'
+        thok.write('x', Instant::now()); // expected 'l'
         assert!(thok.has_finished(), "a mistake ends a death-mode test");
     }
 
@@ -360,20 +399,20 @@ mod tests {
     fn died_only_after_a_mistake_in_death_mode() {
         let mut thok = Thok::new("hello".to_string(), 1, None);
         thok.death_mode = true;
-        thok.write('h');
+        thok.write('h', Instant::now());
         assert!(!thok.died());
-        thok.write('x');
+        thok.write('x', Instant::now());
         assert!(thok.died());
 
         let mut off = Thok::new("hello".to_string(), 1, None);
-        off.write('x');
+        off.write('x', Instant::now());
         assert!(!off.died(), "a mistake only kills a death-mode test");
     }
 
     #[test]
     fn death_mode_off_tolerates_mistakes() {
         let mut thok = Thok::new("hello".to_string(), 1, None);
-        thok.write('x');
+        thok.write('x', Instant::now());
         assert!(!thok.has_finished());
     }
 
@@ -381,7 +420,7 @@ mod tests {
     fn death_mode_beats_a_running_timer() {
         let mut thok = Thok::new("hello".to_string(), 1, Some(10.0));
         thok.death_mode = true;
-        thok.write('x');
+        thok.write('x', Instant::now());
         assert!(thok.has_finished());
     }
 
@@ -403,7 +442,7 @@ mod tests {
                 // as long as the prompt wraps to at least that many
                 assert!(wrapped_lines(&thok, width) >= MAX_VISIBLE_LINES, "{width}");
                 for _ in 0..300 {
-                    thok.write('x');
+                    thok.write('x', Instant::now());
                     let lines = wrapped_lines(&thok, width);
                     let cursor_line = layout::char_cell(
                         &layout::wrap_chars(&thok.prompt_chars, width),
@@ -435,11 +474,11 @@ mod tests {
     fn continuous_mode_finishes_only_on_the_timer() {
         let mut thok = Thok::new("ab".to_string(), 1, Some(0.2));
         thok.refill_words = vec!["word".to_string()];
-        thok.write('a');
-        thok.write('b');
+        thok.write('a', Instant::now());
+        thok.write('b', Instant::now());
         assert!(!thok.has_finished(), "length must not end a timed test");
-        thok.on_tick();
-        thok.on_tick();
+        thok.on_tick(Instant::now());
+        thok.on_tick(Instant::now());
         assert!(thok.has_finished());
     }
 
@@ -451,7 +490,7 @@ mod tests {
         assert!(thok.char_count() > 0);
         assert!(!thok.prompt.starts_with(' '));
         // the first key must not index past the end of an empty prompt
-        thok.write('w');
+        thok.write('w', Instant::now());
         assert_eq!(thok.input[0].outcome, Outcome::Correct);
     }
 
@@ -461,9 +500,9 @@ mod tests {
         thok.refill_words = vec!["word".to_string()];
         thok.death_mode = true;
         thok.refill_if_needed();
-        thok.write('h');
+        thok.write('h', Instant::now());
         assert!(!thok.has_finished());
-        thok.write('x');
+        thok.write('x', Instant::now());
         assert!(thok.has_finished(), "a mistake still ends a -d -s run");
         assert!(thok.died());
     }
@@ -490,7 +529,7 @@ mod tests {
     fn unicode_prompt_finishes_by_length() {
         let mut thok = Thok::new("épée".to_string(), 1, None);
         for c in ['é', 'p', 'é', 'e'] {
-            thok.write(c);
+            thok.write(c, Instant::now());
         }
         assert!(thok.has_finished());
         assert!(thok.input.iter().all(|i| i.outcome == Outcome::Correct));
@@ -499,7 +538,7 @@ mod tests {
     #[test]
     fn unicode_wrong_char_marked_incorrect() {
         let mut thok = Thok::new("épée".to_string(), 1, None);
-        thok.write('e');
+        thok.write('e', Instant::now());
         assert_eq!(thok.input[0].outcome, Outcome::Incorrect);
     }
 
@@ -557,7 +596,7 @@ mod tests {
     fn tick_without_timer_is_noop() {
         let mut thok = Thok::new("abc".to_string(), 1, None);
         assert_eq!(thok.number_of_secs, None);
-        thok.on_tick();
+        thok.on_tick(Instant::now());
         assert_eq!(thok.seconds_remaining, None);
         assert!(!thok.has_finished());
     }
@@ -570,5 +609,56 @@ mod tests {
         assert_eq!(thok.wpm, 0.0);
         assert_eq!(thok.std_dev, 0.0);
         assert_eq!(thok.accuracy, 0.0);
+    }
+
+    #[test]
+    fn a_test_notes_when_it_ends_by_finishing_or_dying() {
+        let start = Instant::now();
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        assert!(!thok.write('a', start));
+        assert_eq!(thok.ended_at, None);
+        assert!(thok.write('b', start + TICK), "the last key ends the test");
+        assert_eq!(thok.ended_at, Some(start + TICK));
+
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.death_mode = true;
+        assert!(thok.write('x', start), "a mistake ends a death mode test");
+        assert_eq!(thok.ended_at, Some(start));
+    }
+
+    #[test]
+    fn a_timed_test_ends_at_the_tick_that_runs_out_the_clock() {
+        let mut thok = Thok::new("abc".to_string(), 1, Some(0.2));
+        thok.write('a', Instant::now());
+        let now = Instant::now();
+        assert!(!thok.on_tick(now));
+        assert!(thok.on_tick(now + TICK));
+        assert_eq!(thok.ended_at, Some(now + TICK));
+        assert!(!thok.on_tick(now + TICK * 2), "a tick after the end");
+        assert_eq!(thok.seconds_remaining, Some(0.0));
+        assert_eq!(thok.ended_at, Some(now + TICK));
+    }
+
+    #[test]
+    fn restart_keys_are_locked_out_just_after_a_test_ends() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.write('a', Instant::now());
+        assert!(thok.restart_keys_live_at(Instant::now()), "a running test");
+        thok.write('b', Instant::now());
+        let ended = thok.ended_at.unwrap();
+        assert!(!thok.restart_keys_live_at(ended));
+        assert!(!thok.restart_keys_live_at(ended + END_LOCKOUT - Duration::from_millis(1)));
+        assert!(thok.restart_keys_live_at(ended + END_LOCKOUT));
+    }
+
+    #[test]
+    fn a_finished_test_wakes_only_while_the_restart_keys_are_locked_out() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.write('a', Instant::now());
+        assert_eq!(thok.next_tick(Instant::now()), None, "nothing to animate");
+        thok.write('b', Instant::now());
+        let ended = thok.ended_at.unwrap();
+        assert_eq!(thok.next_tick(ended), Some(ended + END_LOCKOUT));
+        assert_eq!(thok.next_tick(ended + END_LOCKOUT), None);
     }
 }
