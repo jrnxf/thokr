@@ -3,7 +3,7 @@ use crate::thok::{Outcome, Thok};
 use ratatui::{
     Frame,
     buffer::Buffer,
-    layout::{Alignment, Constraint, Flex, Layout, Position, Rect},
+    layout::{Alignment, Constraint, Layout, Position, Rect},
     style::{Color, Modifier, Style},
     symbols::Marker,
     text::{Line, Span},
@@ -432,26 +432,25 @@ fn render_legend(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     Paragraph::new(Span::styled("(r)etry / (n)ew", style)).render(area, buf);
 }
 
+/// The fatal char of a death screen: a red block with the screen's own
+/// colour for the letter. Reversed rather than a red background, so the web
+/// page, which draws colours and modifiers but no backgrounds, shows it too.
+const FATAL: Style = INCORRECT.add_modifier(Modifier::REVERSED);
+/// What was left to type, dimmer than on the test screen.
+const FORGONE: Style = BOLD.fg(Color::DarkGray).add_modifier(Modifier::DIM);
+
 /// The screen after a death-mode run ends on a mistake: the prompt exactly
-/// where it was on the test screen, the skull above it and how far the run
-/// got below.
+/// where it was on the test screen, and how far the run got below. For a
+/// moment after the death the typed text flashes red; then it settles, with
+/// the fatal char a red block, the rest dimmed away and the stats in red.
 fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     // the run ends on its first mistake, so that is the last key
     let dead_at = thok.input.len().saturating_sub(1);
+    let flashing = thok.death_flashing_at(now);
 
     // the cursor was on the fatal char the moment before the key, so the
     // window of lines is the one the test screen last showed
     let view = PromptLayout::new(thok, area, dead_at);
-
-    // the word that was being typed, spaces excluded
-    let word_start = thok.prompt_chars[..dead_at]
-        .iter()
-        .rposition(|&c| c == ' ')
-        .map_or(0, |i| i + 1);
-    let word_end = thok.prompt_chars[dead_at..]
-        .iter()
-        .position(|&c| c == ' ')
-        .map_or(thok.prompt_chars.len(), |i| dead_at + i);
 
     let text: Vec<Line> = view
         .lines
@@ -460,17 +459,12 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
             let mut spans: Vec<Span> = Vec::new();
             for idx in line.clone() {
                 let char = thok.prompt_chars[idx];
-                let style = if idx == dead_at {
-                    INCORRECT.add_modifier(Modifier::REVERSED)
-                } else if idx < dead_at {
-                    CORRECT
-                } else {
-                    UNTYPED
-                };
-                let style = if (word_start..word_end).contains(&idx) {
-                    style.add_modifier(Modifier::UNDERLINED)
-                } else {
-                    style
+                let style = match (idx.cmp(&dead_at), flashing) {
+                    (_, true) if idx <= dead_at => INCORRECT,
+                    (std::cmp::Ordering::Less, false) => BOLD,
+                    (std::cmp::Ordering::Equal, false) => FATAL,
+                    (_, true) => UNTYPED,
+                    (_, false) => FORGONE,
                 };
                 match spans.last_mut() {
                     Some(span) if span.style == style => span.content.to_mut().push(char),
@@ -482,6 +476,11 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
         .collect();
     view.render_text(text, area, buf);
 
+    // the word that was being typed, spaces excluded
+    let word_start = thok.prompt_chars[..dead_at]
+        .iter()
+        .rposition(|&c| c == ' ')
+        .map_or(0, |i| i + 1);
     let words = thok.prompt_chars[..word_start]
         .iter()
         .filter(|&&c| c == ' ')
@@ -490,20 +489,6 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
         .horizontal_margin(HORIZONTAL_MARGIN)
         .vertical_margin(VERTICAL_MARGIN)
         .areas(area);
-    // the skull sits where it always has: at the top of a block (skull, gap,
-    // blank row for the old "expected" line, gap, prompt, gap, stats) centred
-    // in the content area
-    let title_area = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(view.lines.len() as u16),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .flex(Flex::Center)
-    .split(content_area)[0];
     let stats_area = Rect {
         y: view.prompt_area.bottom() + 1,
         height: 1,
@@ -511,19 +496,16 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
     }
     .intersection(content_area);
 
-    let centered = Alignment::Center;
-    Paragraph::new(Span::styled("\u{1F480}", INCORRECT))
-        .alignment(centered)
-        .render(title_area, buf);
     let word_count = if words == 1 { "word" } else { "words" };
+    let stats_style = if flashing { UNTYPED } else { INCORRECT };
     Paragraph::new(Span::styled(
         format!(
             "{words} {word_count}, {dead_at} chars, {:.1}s",
             thok.elapsed_secs
         ),
-        UNTYPED,
+        stats_style,
     ))
-    .alignment(centered)
+    .alignment(Alignment::Center)
     .render(stats_area, buf);
     render_legend(thok, now, legend_area, buf);
 }
@@ -531,7 +513,7 @@ fn render_death(thok: &Thok, now: Instant, area: Rect, buf: &mut Buffer) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thok::{END_LOCKOUT, Input};
+    use crate::thok::{DEATH_FLASH, END_LOCKOUT, Input};
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
     use std::time::Duration;
@@ -1102,11 +1084,63 @@ mod tests {
     }
 
     #[test]
-    fn death_screen_has_no_expected_vs_pressed_line() {
+    fn death_screen_has_no_skull_expected_line_or_died() {
         let screen = screen_text(&buffer(&died_in_death_mode("the quick brown foxx"), 80, 24));
-        assert!(screen.contains("\u{1F480}"));
+        assert!(!screen.contains("\u{1F480}"));
         assert!(!screen.contains("expected"));
         assert!(!screen.contains("pressed"));
+        assert!(!screen.contains("died"));
+    }
+
+    /// The death screen of "the quick brx" at 80x24 `since_death` after the
+    /// death: the buffer, and the cell of the prompt's char `idx`.
+    fn death_cells(since_death: Duration) -> (Buffer, impl Fn(usize) -> (u16, u16)) {
+        let mut thok = died_in_death_mode("the quick brx");
+        thok.ended_at = Some(Instant::now() - since_death);
+        let buf = buffer(&thok, 80, 24);
+        let (y, row) = (0..24)
+            .map(|y| (y, row_text(&buf, y)))
+            .find(|(_, row)| row.contains("the quick"))
+            .unwrap();
+        let x = row.find("the quick").unwrap() as u16;
+        (buf, move |idx| (x + idx as u16, y))
+    }
+
+    #[test]
+    fn a_death_flashes_the_typed_text_red() {
+        let (buf, cell) = death_cells(Duration::ZERO);
+        for idx in [0, 5, 11, 12] {
+            let cell = &buf[cell(idx)];
+            assert_eq!(cell.fg, Color::Red, "char {idx}");
+            assert_eq!(cell.bg, Color::Reset, "char {idx}");
+        }
+        assert!(buf[cell(13)].modifier.contains(Modifier::DIM));
+        assert_ne!(buf[cell(13)].fg, Color::Red);
+    }
+
+    #[test]
+    fn a_death_settles_into_a_red_block_with_the_rest_dimmed_away() {
+        let (buf, cell) = death_cells(DEATH_FLASH);
+        for idx in [0, 5, 11] {
+            let cell = &buf[cell(idx)];
+            assert_eq!(cell.fg, Color::Reset, "char {idx} is back to normal");
+            assert!(!cell.modifier.contains(Modifier::DIM), "char {idx}");
+        }
+        // the fatal char is the one that was expected, as a red block
+        let fatal = &buf[cell(12)];
+        assert_eq!(fatal.symbol(), "o");
+        assert_eq!(fatal.fg, Color::Red);
+        assert!(fatal.modifier.contains(Modifier::REVERSED), "a red block");
+        // the untyped remainder is dimmer than on the test screen
+        let rest = &buf[cell(13)];
+        assert_eq!(rest.fg, Color::DarkGray);
+        assert!(rest.modifier.contains(Modifier::DIM));
+        // the stats line is red
+        let (y, row) = (0..24)
+            .map(|y| (y, row_text(&buf, y)))
+            .find(|(_, row)| row.contains("chars"))
+            .unwrap();
+        assert_eq!(buf[(row.find("2 words").unwrap() as u16, y)].fg, Color::Red);
     }
 
     /// The cells of the rows the prompt text sits in on the test screen.
@@ -1154,8 +1188,7 @@ mod tests {
 
             let running = prompt_rows(&last_test, width, height);
             let death = prompt_rows(&dead, width, height);
-            // the skull and stats rows carry no letters worth comparing, but
-            // the stats line does: keep only the rows of the prompt itself
+            // the stats line has letters too: keep only the rows of the prompt itself
             let rows: Vec<_> = death
                 .iter()
                 .filter(|(y, _)| running.iter().any(|(ry, _)| ry == y))

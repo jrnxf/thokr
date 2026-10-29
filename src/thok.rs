@@ -11,6 +11,10 @@ pub const TICK: Duration = Duration::from_millis(100);
 /// key held down or typed ahead of the end cannot skip the end screen.
 pub const END_LOCKOUT: Duration = Duration::from_millis(500);
 
+/// After a death, the typed text flashes red for this long before the death
+/// screen settles.
+pub const DEATH_FLASH: Duration = Duration::from_millis(300);
+
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
     Correct,
@@ -103,9 +107,13 @@ impl Thok {
     /// retry keys of a test that ended are still locked out.
     pub fn next_tick(&self, now: Instant) -> Option<Instant> {
         if self.has_finished() {
-            // wake up once more to light the retry keys
-            let live_at = self.ended_at? + END_LOCKOUT;
-            return (now < live_at).then_some(live_at);
+            // wake up to settle a death's flash and to light the retry keys
+            let ended_at = self.ended_at?;
+            let flash_ends = self.died().then_some(ended_at + DEATH_FLASH);
+            return flash_ends
+                .into_iter()
+                .chain([ended_at + END_LOCKOUT])
+                .find(|&at| now < at);
         }
         let animated = self.number_of_secs.is_some() || self.pace_wpm.is_some();
         if !animated {
@@ -279,6 +287,11 @@ impl Thok {
         }
         self.ended_at = Some(now);
         true
+    }
+
+    /// Whether a death's red flash is still on at `now`.
+    pub fn death_flashing_at(&self, now: Instant) -> bool {
+        self.died() && self.ended_at.is_some_and(|ended| now < ended + DEATH_FLASH)
     }
 
     /// Whether the retry and new test keys may act at `now`: always while
@@ -660,5 +673,33 @@ mod tests {
         let ended = thok.ended_at.unwrap();
         assert_eq!(thok.next_tick(ended), Some(ended + END_LOCKOUT));
         assert_eq!(thok.next_tick(ended + END_LOCKOUT), None);
+    }
+
+    #[test]
+    fn a_death_flashes_for_a_moment_and_wakes_to_settle() {
+        let mut thok = Thok::new("ab".to_string(), 1, None);
+        thok.death_mode = true;
+        let start = Instant::now();
+        thok.write('x', start);
+        assert!(thok.died());
+        assert!(thok.death_flashing_at(start));
+        assert!(thok.death_flashing_at(start + DEATH_FLASH - Duration::from_millis(1)));
+        assert!(!thok.death_flashing_at(start + DEATH_FLASH));
+        assert_eq!(thok.next_tick(start), Some(start + DEATH_FLASH));
+        assert_eq!(
+            thok.next_tick(start + DEATH_FLASH),
+            Some(start + END_LOCKOUT)
+        );
+        assert_eq!(thok.next_tick(start + END_LOCKOUT), None);
+    }
+
+    #[test]
+    fn a_natural_finish_does_not_flash() {
+        let mut thok = Thok::new("a".to_string(), 1, None);
+        let start = Instant::now();
+        thok.write('a', start);
+        assert!(thok.has_finished() && !thok.died());
+        assert!(!thok.death_flashing_at(start));
+        assert_eq!(thok.next_tick(start), Some(start + END_LOCKOUT));
     }
 }
