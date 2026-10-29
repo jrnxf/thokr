@@ -523,10 +523,15 @@ mod tests {
 
     /// Draws one frame and returns its cells.
     fn buffer(thok: &Thok, width: u16, height: u16) -> Buffer {
+        buffer_at(thok, Instant::now(), width, height)
+    }
+
+    /// Draws one frame as it looks at `now` and returns its cells.
+    fn buffer_at(thok: &Thok, now: Instant, width: u16, height: u16) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal
             .draw(|f| {
-                render(thok, Instant::now(), f.area(), f.buffer_mut())
+                render(thok, now, f.area(), f.buffer_mut())
                     .map(drop)
                     .unwrap_or_default()
             })
@@ -1096,8 +1101,9 @@ mod tests {
     /// death: the buffer, and the cell of the prompt's char `idx`.
     fn death_cells(since_death: Duration) -> (Buffer, impl Fn(usize) -> (u16, u16)) {
         let mut thok = died_in_death_mode("the quick brx");
-        thok.ended_at = Some(Instant::now() - since_death);
-        let buf = buffer(&thok, 80, 24);
+        let ended_at = Instant::now();
+        thok.ended_at = Some(ended_at);
+        let buf = buffer_at(&thok, ended_at + since_death, 80, 24);
         let (y, row) = (0..24)
             .map(|y| (y, row_text(&buf, y)))
             .find(|(_, row)| row.contains("the quick"))
@@ -1233,8 +1239,9 @@ mod tests {
             } else {
                 Thok::typed(PROMPT, PROMPT, None, &[])
             };
-            thok.ended_at = Some(Instant::now() - ended_ago);
-            let buf = buffer(&thok, 80, 24);
+            let ended_at = Instant::now();
+            thok.ended_at = Some(ended_at);
+            let buf = buffer_at(&thok, ended_at + ended_ago, 80, 24);
             let y = 24 - VERTICAL_MARGIN - 1;
             let x = HORIZONTAL_MARGIN;
             assert_eq!(row_text(&buf, y).trim(), "(r)etry / (n)ew");
