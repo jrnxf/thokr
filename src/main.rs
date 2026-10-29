@@ -136,6 +136,9 @@ impl App {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 return ControlFlow::Break(());
             }
+            // a test that just ended ignores these, dropped rather than held
+            KeyCode::Left | KeyCode::Right | KeyCode::Char('r' | 'n')
+                if finished && !self.thok.restart_keys_live_at(Instant::now()) => {}
             KeyCode::Left => self.restart(),
             KeyCode::Right => self.new_test(),
             KeyCode::Backspace if !finished => self.thok.backspace(),
@@ -151,13 +154,18 @@ impl App {
     }
 
     fn on_tick(&mut self) {
+        // a tick after the end only lights the retry keys
+        if self.thok.has_finished() {
+            return;
+        }
         self.thok.on_tick();
         self.save_if_finished();
     }
 
     /// Call after anything that can end the test: a key press or a tick.
     fn save_if_finished(&mut self) {
-        if self.thok.has_finished() {
+        if self.thok.has_finished() && self.thok.ended_at.is_none() {
+            self.thok.mark_ended();
             self.thok.calc_results();
             if self.thok.died() {
                 return;
@@ -272,5 +280,77 @@ fn next_input(tick_at: Option<Instant>) -> io::Result<Input> {
             Event::Resize(_, _) => return Ok(Input::Resize),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::thok::END_LOCKOUT;
+    use std::time::Duration;
+
+    /// An app on a finished test that ended `ended_ago` ago.
+    fn finished_app(ended_ago: Duration) -> App {
+        let mut app = App::new(Cli::parse_from(["thokr", "-p", "ab"]));
+        app.thok = Thok::typed("ab", "ab", None, &[]);
+        app.thok.ended_at = Some(Instant::now() - ended_ago);
+        app
+    }
+
+    fn press(app: &mut App, code: KeyCode) -> ControlFlow<()> {
+        app.on_key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    #[test]
+    fn retry_and_new_are_ignored_just_after_the_end() {
+        for code in [
+            KeyCode::Char('r'),
+            KeyCode::Char('n'),
+            KeyCode::Left,
+            KeyCode::Right,
+        ] {
+            let mut app = finished_app(Duration::ZERO);
+            assert!(press(&mut app, code).is_continue());
+            assert_eq!(app.thok.input.len(), 2, "{code:?} left the end screen");
+        }
+    }
+
+    #[test]
+    fn a_dropped_key_is_not_replayed_when_the_lockout_ends() {
+        let mut app = finished_app(Duration::ZERO);
+        let _ = press(&mut app, KeyCode::Char('r'));
+        app.thok.ended_at = Some(Instant::now() - END_LOCKOUT);
+        assert_eq!(app.thok.input.len(), 2, "nothing was buffered");
+    }
+
+    #[test]
+    fn retry_and_new_work_once_the_lockout_has_passed() {
+        for code in [
+            KeyCode::Char('r'),
+            KeyCode::Char('n'),
+            KeyCode::Left,
+            KeyCode::Right,
+        ] {
+            let mut app = finished_app(END_LOCKOUT);
+            assert!(press(&mut app, code).is_continue());
+            assert!(app.thok.input.is_empty(), "{code:?} started a new test");
+            assert!(app.thok.ended_at.is_none());
+        }
+    }
+
+    #[test]
+    fn escape_and_ctrl_c_quit_inside_the_lockout() {
+        let mut app = finished_app(Duration::ZERO);
+        assert!(press(&mut app, KeyCode::Esc).is_break());
+        let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert!(app.on_key(ctrl_c).is_break());
+    }
+
+    #[test]
+    fn a_running_test_is_never_locked_out() {
+        let mut app = App::new(Cli::parse_from(["thokr", "-p", "ab"]));
+        let _ = press(&mut app, KeyCode::Char('a'));
+        assert!(press(&mut app, KeyCode::Left).is_continue());
+        assert!(app.thok.input.is_empty(), "left restarted the running test");
     }
 }

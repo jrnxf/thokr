@@ -7,6 +7,10 @@ use std::time::{Duration, Instant};
 /// How often the countdown and the pace caret move while a test is running.
 pub const TICK: Duration = Duration::from_millis(100);
 
+/// After a test ends, retry and new test keys are ignored for this long, so a
+/// key held down or typed ahead of the end cannot skip the end screen.
+pub const END_LOCKOUT: Duration = Duration::from_millis(500);
+
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub enum Outcome {
     Correct,
@@ -43,6 +47,8 @@ pub struct Thok {
     pub accuracy: f64,
     pub std_dev: f64,
     pub pace_wpm: Option<f64>,
+    /// When the test ended, naturally or by dying; set once.
+    pub ended_at: Option<Instant>,
     /// End the test the instant an incorrect character is typed.
     pub death_mode: bool,
     /// Word pool for continuous (timed) mode. When non-empty, the prompt is
@@ -71,6 +77,7 @@ impl Thok {
             accuracy: 0.0,
             std_dev: 0.0,
             pace_wpm: None,
+            ended_at: None,
             ticks: 0,
             death_mode: false,
             refill_words: vec![],
@@ -94,8 +101,12 @@ impl Thok {
     /// When the next tick is due. None unless a test with something to
     /// animate (a countdown or a pace caret) is running.
     pub fn next_tick(&self) -> Option<Instant> {
+        if self.has_finished() {
+            // wake up once more to light the retry keys
+            return self.ended_at.map(|ended| ended + END_LOCKOUT);
+        }
         let animated = self.number_of_secs.is_some() || self.pace_wpm.is_some();
-        if !animated || self.has_finished() {
+        if !animated {
             return None;
         }
         Some(self.started_at? + TICK * (self.ticks + 1))
@@ -247,6 +258,17 @@ impl Thok {
             timestamp: Instant::now(),
         });
         self.refill_if_needed();
+    }
+
+    /// Notes the moment the test ended; the first call counts.
+    pub fn mark_ended(&mut self) {
+        self.ended_at.get_or_insert_with(Instant::now);
+    }
+
+    /// Whether the retry and new test keys work at `now`: always while the
+    /// test runs, and from `END_LOCKOUT` after it ended.
+    pub fn restart_keys_live_at(&self, now: Instant) -> bool {
+        self.ended_at.is_none_or(|ended| now >= ended + END_LOCKOUT)
     }
 
     pub fn has_finished(&self) -> bool {
@@ -570,5 +592,25 @@ mod tests {
         assert_eq!(thok.wpm, 0.0);
         assert_eq!(thok.std_dev, 0.0);
         assert_eq!(thok.accuracy, 0.0);
+    }
+
+    #[test]
+    fn restart_keys_are_live_while_running_and_after_the_lockout() {
+        let mut thok = Thok::typed("ab", "ab", None, &[]);
+        let now = Instant::now();
+        assert!(thok.restart_keys_live_at(now), "a test that has not ended");
+        thok.ended_at = Some(now);
+        assert!(!thok.restart_keys_live_at(now));
+        assert!(!thok.restart_keys_live_at(now + END_LOCKOUT - Duration::from_millis(1)));
+        assert!(thok.restart_keys_live_at(now + END_LOCKOUT));
+    }
+
+    #[test]
+    fn a_finished_test_wakes_once_when_the_lockout_ends() {
+        let mut thok = Thok::typed("ab", "ab", None, &[]);
+        assert_eq!(thok.next_tick(), None, "no end noted yet");
+        thok.mark_ended();
+        let ended = thok.ended_at.unwrap();
+        assert_eq!(thok.next_tick(), Some(ended + END_LOCKOUT));
     }
 }

@@ -12,7 +12,7 @@ use ratatui::{
         canvas::{Canvas, Line as CanvasLine},
     },
 };
-use std::ops::Range;
+use std::{ops::Range, time::Instant};
 
 const HORIZONTAL_MARGIN: u16 = 5;
 const VERTICAL_MARGIN: u16 = 2;
@@ -419,11 +419,17 @@ fn render_results(thok: &Thok, area: Rect, buf: &mut Buffer) {
         .alignment(Alignment::Center)
         .render(stats_area, buf);
 
-    Paragraph::new(Span::styled(
-        "(r)etry / (n)ew / (esc)ape",
-        Style::new().add_modifier(Modifier::ITALIC),
-    ))
-    .render(legend_area, buf);
+    render_legend(thok, legend_area, buf);
+}
+
+/// The key hints of an end screen. They are dimmed while the retry keys are
+/// still locked out (see `END_LOCKOUT`).
+fn render_legend(thok: &Thok, area: Rect, buf: &mut Buffer) {
+    let mut style = Style::new().add_modifier(Modifier::ITALIC);
+    if !thok.restart_keys_live_at(Instant::now()) {
+        style = style.add_modifier(Modifier::DIM);
+    }
+    Paragraph::new(Span::styled("(r)etry / (n)ew", style)).render(area, buf);
 }
 
 /// The screen after a death-mode run ends on a mistake: the prompt exactly
@@ -519,20 +525,16 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     ))
     .alignment(centered)
     .render(stats_area, buf);
-    Paragraph::new(Span::styled(
-        "(r)etry / (n)ew / (esc)ape",
-        Style::new().add_modifier(Modifier::ITALIC),
-    ))
-    .render(legend_area, buf);
+    render_legend(thok, legend_area, buf);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thok::Input;
+    use crate::thok::{END_LOCKOUT, Input};
     use ratatui::{Terminal, backend::TestBackend};
     use std::fmt::Write;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     const PROMPT: &str = "the quick brown fox jumps over the lazy dog";
     const LONG_PROMPT: &str = "it was the best of times it was the worst of times it was the age of wisdom it was the age of foolishness it was the epoch of belief it was the epoch of incredulity";
@@ -1003,7 +1005,7 @@ mod tests {
                 // no panic is the point; the stats and legend stay
                 let screen = screen_text(&buffer(&thok, width, height));
                 if width >= 60 && height >= 20 {
-                    assert!(screen.contains("(r)etry / (n)ew / (esc)ape"));
+                    assert!(screen.contains("(r)etry / (n)ew"));
                     if !coords.is_empty() {
                         assert!(line_columns(&thok, width, height) > 0);
                     }
@@ -1184,11 +1186,30 @@ mod tests {
             dead.death_mode = true;
             let buf = buffer(&dead, 80, height);
             let legend = row_text(&buf, height - VERTICAL_MARGIN - 1);
-            assert_eq!(
-                legend.trim(),
-                "(r)etry / (n)ew / (esc)ape",
-                "{typed:?} at 80x{height}"
-            );
+            assert_eq!(legend.trim(), "(r)etry / (n)ew", "{typed:?} at 80x{height}");
+        }
+    }
+
+    #[test]
+    fn the_end_screen_hints_are_dim_until_the_retry_keys_are_live() {
+        let hint_dim = |ended_ago: Duration, dead: bool| {
+            let mut thok = if dead {
+                let mut thok = died_in_death_mode("the quick brx");
+                thok.death_mode = true;
+                thok
+            } else {
+                Thok::typed(PROMPT, PROMPT, None, &[])
+            };
+            thok.ended_at = Some(Instant::now() - ended_ago);
+            let buf = buffer(&thok, 80, 24);
+            let y = 24 - VERTICAL_MARGIN - 1;
+            let x = HORIZONTAL_MARGIN;
+            assert_eq!(row_text(&buf, y).trim(), "(r)etry / (n)ew");
+            buf[(x, y)].modifier.contains(Modifier::DIM)
+        };
+        for dead in [false, true] {
+            assert!(hint_dim(Duration::ZERO, dead), "locked, dead: {dead}");
+            assert!(!hint_dim(END_LOCKOUT, dead), "live, dead: {dead}");
         }
     }
 
