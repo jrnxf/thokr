@@ -1,3 +1,5 @@
+use crate::layout;
+use crate::ui::MAX_VISIBLE_LINES;
 use crate::util::std_dev;
 use rand::seq::SliceRandom;
 use std::time::{Duration, Instant};
@@ -18,12 +20,12 @@ pub struct Input {
     pub timestamp: Instant,
 }
 
-/// In continuous (timed) mode, keep at least this many characters queued ahead
-/// of the cursor so the typist never runs out of words before the clock stops.
-const REFILL_LOOKAHEAD_CHARS: usize = 120;
+/// How many fresh words to append at a time when the prompt runs short.
+const REFILL_WORD_COUNT: usize = 10;
 
-/// How many fresh words to append each time the queue runs low.
-const REFILL_WORD_COUNT: usize = 30;
+/// Chars per line before the screen has reported its width: an 80 column
+/// terminal less its margins.
+const DEFAULT_LINE_WIDTH: u16 = 70;
 
 /// represents a test being displayed to the user
 #[derive(Debug)]
@@ -47,6 +49,8 @@ pub struct Thok {
     /// topped up as the cursor advances and the test ends only on the timer,
     /// never by reaching the end of the words.
     pub refill_words: Vec<String>,
+    /// How many chars fit on a line of the screen, to size the refill by.
+    line_width: u16,
     ticks: u32,
 }
 
@@ -70,6 +74,7 @@ impl Thok {
             ticks: 0,
             death_mode: false,
             refill_words: vec![],
+            line_width: DEFAULT_LINE_WIDTH,
         }
     }
 
@@ -102,30 +107,48 @@ impl Thok {
         !self.refill_words.is_empty()
     }
 
-    /// In continuous mode, append fresh words whenever fewer than
-    /// [`REFILL_LOOKAHEAD_CHARS`] characters remain ahead of the cursor, so the
-    /// typist always has runway until the timer stops. No-op otherwise.
+    /// Tells the test how wide the screen's lines are, and tops the prompt up
+    /// for that width.
+    pub fn set_line_width(&mut self, line_width: u16) {
+        if self.line_width != line_width {
+            self.line_width = line_width;
+            self.refill_if_needed();
+        }
+    }
+
+    /// In continuous mode, append fresh words until the prompt wraps to at
+    /// least a full window of lines below the cursor's line, so the view
+    /// always shows the same number of lines and never grows mid-test. No-op
+    /// otherwise.
     pub fn refill_if_needed(&mut self) {
-        let remaining = self.char_count().saturating_sub(self.input.len());
-        if self.refill_words.is_empty() || remaining >= REFILL_LOOKAHEAD_CHARS {
+        if self.refill_words.is_empty() {
             return;
         }
 
-        let rng = &mut rand::thread_rng();
-        let mut appended = String::new();
-        for _ in 0..REFILL_WORD_COUNT {
-            if let Some(word) = self.refill_words.choose(rng) {
-                // words are space-separated, but the prompt must not start
-                // with a space
-                if !self.prompt_chars.is_empty() || !appended.is_empty() {
-                    appended.push(' ');
+        while self.lines_short() {
+            let rng = &mut rand::thread_rng();
+            let mut appended = String::new();
+            for _ in 0..REFILL_WORD_COUNT {
+                if let Some(word) = self.refill_words.choose(rng) {
+                    // words are space-separated, but the prompt must not
+                    // start with a space
+                    if !self.prompt_chars.is_empty() || !appended.is_empty() {
+                        appended.push(' ');
+                    }
+                    appended.push_str(word);
                 }
-                appended.push_str(word);
             }
+            self.prompt.push_str(&appended);
+            self.prompt_chars.extend(appended.chars());
         }
+    }
 
-        self.prompt.push_str(&appended);
-        self.prompt_chars.extend(appended.chars());
+    /// True when fewer lines than the window shows follow the cursor's line.
+    fn lines_short(&self) -> bool {
+        let lines = layout::wrap_chars(&self.prompt_chars, self.line_width);
+        let cursor_line = layout::char_cell(&lines, self.input.len())
+            .map_or(lines.len().saturating_sub(1), |(line_no, _)| line_no);
+        lines.len() < cursor_line + MAX_VISIBLE_LINES
     }
 
     pub fn on_tick(&mut self) {
@@ -362,19 +385,50 @@ mod tests {
         assert!(thok.has_finished());
     }
 
-    #[test]
-    fn continuous_mode_refills_ahead_of_the_cursor() {
-        let mut thok = Thok::new("a b".to_string(), 2, Some(30.0));
-        thok.refill_words = vec!["word".to_string()];
-        thok.refill_if_needed();
-        assert!(thok.char_count() - thok.input.len() >= REFILL_LOOKAHEAD_CHARS);
+    /// How many lines the prompt wraps to at `width` chars a line.
+    fn wrapped_lines(thok: &Thok, width: u16) -> usize {
+        layout::wrap_chars(&thok.prompt_chars, width).len()
+    }
 
-        let before = thok.char_count();
-        for _ in 0..before {
-            thok.write('a');
+    #[test]
+    fn continuous_mode_keeps_a_full_window_of_lines_across_writes() {
+        for width in [20, 40, 70, 150] {
+            for prompt in ["", "a b", "word word word word word word word word"] {
+                let mut thok = Thok::new(prompt.to_string(), 2, Some(30.0));
+                thok.refill_words = vec!["word".to_string(), "longerword".to_string()];
+                thok.set_line_width(width);
+                thok.refill_if_needed();
+
+                // the lines the screen shows: the window is a fixed size
+                // as long as the prompt wraps to at least that many
+                assert!(wrapped_lines(&thok, width) >= MAX_VISIBLE_LINES, "{width}");
+                for _ in 0..300 {
+                    thok.write('x');
+                    let lines = wrapped_lines(&thok, width);
+                    let cursor_line = layout::char_cell(
+                        &layout::wrap_chars(&thok.prompt_chars, width),
+                        thok.input.len(),
+                    )
+                    .unwrap()
+                    .0;
+                    assert!(
+                        lines >= cursor_line + MAX_VISIBLE_LINES,
+                        "window shrinks at width {width} after {} keys",
+                        thok.input.len()
+                    );
+                }
+            }
         }
-        assert!(thok.char_count() > before, "typing to the end streams more");
-        assert!(thok.char_count() - thok.input.len() >= REFILL_LOOKAHEAD_CHARS);
+    }
+
+    #[test]
+    fn continuous_mode_refills_when_the_screen_gets_narrower() {
+        let mut thok = Thok::new(String::new(), 0, Some(30.0));
+        thok.refill_words = vec!["word".to_string()];
+        thok.set_line_width(200);
+        thok.refill_if_needed();
+        thok.set_line_width(20);
+        assert!(wrapped_lines(&thok, 20) >= MAX_VISIBLE_LINES);
     }
 
     #[test]

@@ -123,7 +123,9 @@ impl App {
         self.thok = Self::new_thok(&self.cli, prompt, word_count);
     }
 
-    fn draw(&self, frame: &mut ratatui::Frame) {
+    fn draw(&mut self, frame: &mut ratatui::Frame) {
+        // a timed test streams words to fill the lines the screen shows
+        self.thok.set_line_width(ui::line_width(frame.area()));
         ui::draw(frame, &self.thok);
     }
 
