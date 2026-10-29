@@ -475,7 +475,7 @@ fn render_death(thok: &Thok, area: Rect, buf: &mut Buffer) {
     .areas(content_area);
 
     let centered = Alignment::Center;
-    Paragraph::new(Span::styled("\u{1F480} YOU DIED", INCORRECT))
+    Paragraph::new(Span::styled("\u{1F480}", INCORRECT))
         .alignment(centered)
         .render(title_area, buf);
     Paragraph::new(Span::styled(
@@ -1093,7 +1093,7 @@ mod tests {
     #[test]
     fn death_screen_names_a_mistyped_space() {
         let screen = screen_text(&buffer(&died_in_death_mode("the quick brown foxx"), 80, 24));
-        assert!(screen.contains("YOU DIED"));
+        assert!(screen.contains("\u{1F480}"));
         assert!(screen.contains("expected space, pressed 'x'"));
     }
 
@@ -1102,7 +1102,7 @@ mod tests {
         let mut thok = Thok::typed(PROMPT, PROMPT, None, &[]);
         thok.death_mode = true;
         let screen = screen_text(&buffer(&thok, 80, 24));
-        assert!(!screen.contains("YOU DIED"));
+        assert!(!screen.contains("\u{1F480}"));
         assert!(screen.contains("wpm"));
     }
 
@@ -1110,7 +1110,7 @@ mod tests {
     fn a_mistake_outside_death_mode_gets_the_normal_results_screen() {
         let thok = Thok::typed(PROMPT, PROMPT.replacen('q', "x", 1).as_str(), None, &[]);
         let screen = screen_text(&buffer(&thok, 80, 24));
-        assert!(!screen.contains("YOU DIED"));
+        assert!(!screen.contains("\u{1F480}"));
     }
 
     #[test]
