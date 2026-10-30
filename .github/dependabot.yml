@@ -1,20 +1,13 @@
 version: 2
 updates:
   - package-ecosystem: cargo
-    directory: /
+    directories:
+      - /
+      - /web/engine
     schedule:
       interval: weekly
     groups:
       cargo-minor-patch:
-        update-types:
-          - minor
-          - patch
-  - package-ecosystem: cargo
-    directory: /web/engine
-    schedule:
-      interval: weekly
-    groups:
-      cargo-web-engine-minor-patch:
         update-types:
           - minor
           - patch
